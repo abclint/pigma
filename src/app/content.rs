@@ -153,9 +153,9 @@ impl App {
                 let cover = self.playback.state.cover.0.clone();
                 let picker = self.picker.clone();
                 tokio::task::spawn_blocking(move || {
-                    if let Ok(resp) = reqwest::blocking::get(&pic_url) {
-                        if let Ok(bytes) = resp.bytes() {
-                            if let Ok(img) = image::load_from_memory(&bytes) {
+                    if let Ok(resp) = reqwest::blocking::get(&pic_url)
+                        && let Ok(bytes) = resp.bytes()
+                            && let Ok(img) = image::load_from_memory(&bytes) {
                                 // Apply circular mask
                                 let (w, h) = img.dimensions();
                                 let size = w.min(h);
@@ -180,8 +180,6 @@ impl App {
                                     *guard = Some(protocol);
                                 }
                             }
-                        }
-                    }
                 });
             }
         }
