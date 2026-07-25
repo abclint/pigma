@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ncm_api::SongInfo;
@@ -53,6 +53,8 @@ type CacheIndex = HashMap<u64, CacheEntryWrapper>;
 struct CacheEntryWrapper {
     filename: String,
     duration: u64,
+    #[serde(default)]
+    accessed_at: u64,
 }
 
 impl<'de> Deserialize<'de> for CacheEntryWrapper {
@@ -64,9 +66,13 @@ impl<'de> Deserialize<'de> for CacheEntryWrapper {
         Ok(Self {
             filename: entry.filename,
             duration: entry.duration,
+            accessed_at: 0,
         })
     }
 }
+
+/// Default maximum cache size in bytes (2 GB).
+const DEFAULT_MAX_CACHE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
 #[derive(Clone)]
 /// Manages content, lyrics, and audio caches on disk.
@@ -75,10 +81,9 @@ pub struct CacheManager {
     lyrics_dir: PathBuf,
     content_dir: PathBuf,
     template: String,
-    index: Arc<Mutex<CacheIndex>>,
+    index: Arc<RwLock<CacheIndex>>,
+    max_cache_bytes: u64,
 }
-
-use std::sync::Arc;
 
 impl CacheManager {
     pub fn new(downloads_dir: PathBuf, base_dir: PathBuf, template: String) -> Self {
@@ -90,7 +95,8 @@ impl CacheManager {
             lyrics_dir,
             content_dir,
             template,
-            index: Arc::new(Mutex::new(index)),
+            index: Arc::new(RwLock::new(index)),
+            max_cache_bytes: DEFAULT_MAX_CACHE_BYTES,
         }
     }
 
@@ -109,19 +115,24 @@ impl CacheManager {
             .unwrap_or_default()
     }
 
+    /// Snapshot the index under a read lock, then serialize and write to disk
+    /// without holding any lock.
     fn save_index(&self) {
-        let index = self.index.lock().unwrap();
+        let snapshot = {
+            let index = self.index.read().unwrap_or_else(|e| e.into_inner());
+            serde_json::to_string_pretty(&*index).unwrap_or_default()
+        };
         let path = Self::index_path(&self.downloads_dir);
-        if let Err(e) = fs::write(
-            &path,
-            serde_json::to_string_pretty(&*index).unwrap_or_default(),
-        ) {
+        if let Err(e) = fs::write(&path, snapshot) {
             log::warn!("Failed to write cache index: {e}");
         }
     }
 
     pub fn remove_from_index(&self, song_id: u64) {
-        self.index.lock().unwrap().remove(&song_id);
+        self.index
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&song_id);
     }
 
     /// Persist the in-memory cache index to disk.
@@ -154,7 +165,7 @@ impl CacheManager {
     }
 
     pub fn cache_path_for(&self, song: &SongInfo, ext: &str) -> PathBuf {
-        let index = self.index.lock().unwrap();
+        let index = self.index.read().unwrap_or_else(|e| e.into_inner());
         if let Some(entry) = index.get(&song.id) {
             return self.downloads_dir.join(&entry.filename);
         }
@@ -163,7 +174,7 @@ impl CacheManager {
     }
 
     pub fn cache_path(&self, id: u64, ext: &str) -> PathBuf {
-        let index = self.index.lock().unwrap();
+        let index = self.index.read().unwrap_or_else(|e| e.into_inner());
         if let Some(entry) = index.get(&id) {
             return self.downloads_dir.join(&entry.filename);
         }
@@ -188,18 +199,54 @@ impl CacheManager {
         let filename = self.resolve_filename(song, ext);
         let path = self.downloads_dir.join(&filename);
 
-        {
-            let mut index = self.index.lock().unwrap();
-            index.insert(
+        // Evict oldest entries if cache exceeds size limit
+        self.evict();
+
+        Ok(CacheFileProvider { path })
+    }
+
+    /// Mark a song as successfully cached. Call this only after the download
+    /// completes, so the index never contains entries for incomplete/failed
+    /// downloads.
+    pub fn mark_cached(&self, song: &SongInfo, ext: &str) {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let filename = self.resolve_filename(song, ext);
+        self.index
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(
                 song.id,
                 CacheEntryWrapper {
                     filename,
                     duration: song.duration,
+                    accessed_at: now,
                 },
             );
-        }
+    }
 
-        Ok(CacheFileProvider { path })
+    /// Remove index entries whose files no longer exist or are empty.
+    pub fn cleanup_index(&self) {
+        let mut index = self.index.write().unwrap_or_else(|e| e.into_inner());
+        let stale: Vec<u64> = index
+            .iter()
+            .filter(|(_, entry)| {
+                let path = self.downloads_dir.join(&entry.filename);
+                match fs::metadata(&path) {
+                    Ok(m) => m.len() == 0,
+                    Err(_) => true,
+                }
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        for id in &stale {
+            index.remove(id);
+        }
+        if !stale.is_empty() {
+            log::info!("Cleaned up {} stale cache entries", stale.len());
+        }
     }
 
     fn lyrics_path(&self, id: u64) -> PathBuf {
@@ -271,19 +318,17 @@ impl CacheManager {
         .flatten()
     }
 
-    pub fn list_cached_songs(&self) -> Vec<SongInfo> {
-        let index = self.index.lock().unwrap().clone();
+    /// Collect cached songs by iterating the index under a read lock, avoiding
+    /// a full clone of the HashMap.
+    fn collect_cached_songs(&self, index: &CacheIndex) -> Vec<SongInfo> {
         let mut songs = Vec::new();
-
-        for (id, entry) in &index {
+        for (id, entry) in index {
             let path = self.downloads_dir.join(&entry.filename);
             if !path.exists() {
                 continue;
             }
             let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-
             let (name, singer) = self.parse_filename(stem, *id);
-
             songs.push(SongInfo {
                 id: *id,
                 name,
@@ -296,50 +341,23 @@ impl CacheManager {
                 copyright: ncm_api::SongCopyright::Unknown,
             });
         }
-
         songs
     }
 
+    pub fn list_cached_songs(&self) -> Vec<SongInfo> {
+        let index = self.index.read().unwrap_or_else(|e| e.into_inner());
+        self.collect_cached_songs(&index)
+    }
+
     pub async fn list_cached_songs_async(&self) -> Vec<SongInfo> {
-        let index = self.index.lock().unwrap().clone();
-        let downloads_dir = self.downloads_dir.clone();
-        let template = self.template.clone();
-
-        tokio::task::spawn_blocking(move || {
-            let mut songs = Vec::new();
-
-            for (id, entry) in &index {
-                let path = downloads_dir.join(&entry.filename);
-                if !path.exists() {
-                    continue;
-                }
-                let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-
-                let (name, singer) = Self::parse_filename_static(stem, *id, &template);
-
-                songs.push(SongInfo {
-                    id: *id,
-                    name,
-                    singer,
-                    artist_id: 0,
-                    album: String::new(),
-                    album_id: 0,
-                    pic_url: String::new(),
-                    duration: entry.duration,
-                    copyright: ncm_api::SongCopyright::Unknown,
-                });
-            }
-
-            songs
-        })
-        .await
-        .unwrap_or_default()
+        let songs = {
+            let index = self.index.read().unwrap_or_else(|e| e.into_inner());
+            self.collect_cached_songs(&index)
+        };
+        songs
     }
 
     /// Parse a cached filename stem into (name, singer) using the template.
-    ///
-    /// Extracts literal separators from the template, then splits the stem
-    /// from the right to separate the last field (singer) from the rest (name).
     fn parse_filename(&self, stem: &str, id: u64) -> (String, String) {
         Self::parse_filename_static(stem, id, &self.template)
     }
@@ -420,6 +438,61 @@ impl CacheManager {
                 log::warn!("Failed to serialize content cache for {api}: {e}");
             }
         }
+    }
+
+    /// Evict least-recently-accessed cached audio files when total size exceeds
+    /// `max_cache_bytes`. Returns the number of entries evicted.
+    pub fn evict(&self) -> usize {
+        let total_bytes = {
+            let index = self.index.read().unwrap_or_else(|e| e.into_inner());
+            self.total_cache_size(&index)
+        };
+        if total_bytes <= self.max_cache_bytes {
+            return 0;
+        }
+
+        let mut index = self.index.write().unwrap_or_else(|e| e.into_inner());
+        let total = self.total_cache_size(&index);
+        if total <= self.max_cache_bytes {
+            return 0;
+        }
+
+        // Collect (id, filename, accessed_at) and sort by accessed_at ascending
+        let mut entries: Vec<(u64, String, u64)> = index
+            .iter()
+            .map(|(id, e)| (*id, e.filename.clone(), e.accessed_at))
+            .collect();
+        entries.sort_by_key(|e| e.2);
+
+        let mut evicted = 0;
+        let mut freed = 0u64;
+        for (id, filename, _) in &entries {
+            if total - freed <= self.max_cache_bytes {
+                break;
+            }
+            let path = self.downloads_dir.join(filename);
+            if let Ok(meta) = fs::metadata(&path) {
+                freed += meta.len();
+            }
+            let _ = fs::remove_file(&path);
+            index.remove(id);
+            evicted += 1;
+        }
+
+        if evicted > 0 {
+            log::info!("Evicted {evicted} cached songs, freed {freed} bytes");
+        }
+        evicted
+    }
+
+    fn total_cache_size(&self, index: &CacheIndex) -> u64 {
+        index
+            .values()
+            .filter_map(|e| {
+                let path = self.downloads_dir.join(&e.filename);
+                fs::metadata(&path).ok().map(|m| m.len())
+            })
+            .sum()
     }
 }
 

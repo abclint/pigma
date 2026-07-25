@@ -19,6 +19,7 @@ use ratatui::widgets::TableState;
 use crate::{
     config::{BorderConfig, Config, Theme, ThemeRegistry},
     event::EventHandler,
+    service::ApiService,
     text_input::TextInput,
 };
 
@@ -93,6 +94,7 @@ impl NavigationState {
         self.content = Arc::new(content);
         self.content_selected = 0;
         self.content_column_selected = 0;
+        self.table_mode = TableMode::Row;
         self.table_state = TableState::default();
         self.table_state.select_first();
         self.pagination = None;
@@ -176,7 +178,8 @@ pub struct App {
     pub state: State,
     pub playback: PlaybackEngine,
     pub theme_registry: ThemeRegistry,
-    pub api: Arc<ncm_api::NcmClient>,
+    pub service: ApiService,
+    pub picker: ratatui_image::picker::Picker,
 }
 
 impl App {
@@ -236,21 +239,20 @@ impl App {
         let base_dir = dirs::cache_dir()
             .unwrap_or_else(|| std::path::PathBuf::from("."))
             .join("pigma");
-        let cache_template = config.cache_template.clone();
         let proxy = config.proxy.clone();
+
+        let cache =
+            crate::cache::CacheManager::new(cache_dir, base_dir, config.cache_template.clone());
+
+        let service = ApiService::new(api.clone(), cache.clone());
+
+        let picker = ratatui_image::picker::Picker::from_query_stdio()
+            .unwrap_or_else(|_| ratatui_image::picker::Picker::halfblocks());
 
         Ok(Self {
             config,
-            api: api.clone(),
-            playback: PlaybackEngine::new(
-                tx,
-                api.clone(),
-                cache_dir,
-                base_dir,
-                quality,
-                cache_template,
-                proxy,
-            ),
+            service,
+            playback: PlaybackEngine::new(tx, api, cache, quality, proxy),
             state: State {
                 running: true,
                 events,
@@ -281,6 +283,7 @@ impl App {
                 toast_time: None,
             },
             theme_registry,
+            picker,
         })
     }
 
@@ -301,7 +304,7 @@ impl App {
 
     pub fn quit(&mut self) {
         self.playback.save_session();
-        self.api.flush_cookies();
+        self.service.client().flush_cookies();
         self.state.running = false;
     }
 

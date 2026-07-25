@@ -8,7 +8,6 @@ mod source;
 mod storage;
 pub mod types;
 
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -45,10 +44,8 @@ impl PlaybackEngine {
     pub fn new(
         event_tx: mpsc::UnboundedSender<Event>,
         api: Arc<NcmClient>,
-        downloads_dir: PathBuf,
-        base_dir: PathBuf,
+        cache: crate::cache::CacheManager,
         quality: SongQuality,
-        cache_template: String,
         proxy: String,
     ) -> Self {
         let storage = PlaylistStorage::new();
@@ -57,14 +54,7 @@ impl PlaybackEngine {
             queue: PlaylistQueue::new(),
             strategy: mode::Strategy::Sequential,
             storage,
-            source: AudioSource::new(
-                api.clone(),
-                downloads_dir,
-                base_dir,
-                quality,
-                cache_template,
-                proxy,
-            ),
+            source: AudioSource::new(api.clone(), cache, quality, proxy),
             controller: PlaybackHandle::new(event_tx.clone()),
             event_tx: event_tx.clone(),
             api,
@@ -360,6 +350,11 @@ impl PlaybackEngine {
 
     pub fn on_playback_error(&mut self, err: String) {
         self.snapshot_report();
+        //todo 这种实现可能存在问题，重写
+        // buffer underrun/overrun is transient — rodio recovers automatically
+        if err.contains("buffer underrun") || err.contains("overrun") {
+            return;
+        }
         self.state.on_error(err.clone());
         self.consecutive_errors += 1;
         if self.consecutive_errors >= 3 {
@@ -401,6 +396,7 @@ impl PlaybackEngine {
             self.state.volume,
             self.state.progress,
         );
+        self.source.cache.cleanup_index();
         self.source.cache.flush_index();
     }
 

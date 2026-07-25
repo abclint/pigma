@@ -36,12 +36,12 @@ impl App {
             if self.state.splash.boot_complete && self.state.navigation.page == Page::Splash {
                 if self.state.offline {
                     self.navigate_to_local();
-                } else if self.api.is_logged_in() {
+                } else if self.service.client().is_logged_in() {
                     self.navigate_to_main();
-                    let api = self.api.clone();
+                    let client = self.service.client().clone();
                     let sender = self.state.events.sender();
                     tokio::spawn(async move {
-                        match api.login_status().await {
+                        match client.login_status().await {
                             Ok(info) => {
                                 if sender.send(AuthEvent::Success(info).into()).is_err() {
                                     log::error!("Failed to send LoginSuccess: receiver dropped");
@@ -242,10 +242,10 @@ impl App {
 
     pub(crate) fn report_pending_play(&mut self) {
         if let Some((song_id, time_ms)) = self.playback.take_pending_report() {
-            let api = self.api.clone();
+            let client = self.service.client().clone();
             tokio::spawn(async move {
                 log::info!("上报播放记录: song_id={song_id}, time_ms={time_ms}");
-                if let Err(e) = api.report_play(song_id, time_ms, None).await {
+                if let Err(e) = client.report_play(song_id, time_ms, None).await {
                     log::error!("Failed to report play for {song_id}: {e}");
                 }
             });

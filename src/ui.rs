@@ -36,6 +36,7 @@ use crate::{
 pub struct BlockStyle<'a> {
     pub colors: &'a Theme,
     pub border: &'a BorderConfig,
+    pub tick: u64,
 }
 
 pub fn calc_scroll_offset(selected: usize, visible_height: usize, total: usize) -> usize {
@@ -115,6 +116,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     let bs = BlockStyle {
         colors,
         border: &app.state.border,
+        tick: app.state.tick,
     };
 
     match app.state.navigation.page {
@@ -179,7 +181,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                             .unwrap_or("{name} ({count})");
                         render_title(template, name, count)
                     };
-                    let block = create_block(title, &bs, false);
+                    let block = create_block(&title, &bs, false);
                     let inner = block.inner(lay.content);
                     f.render_widget(block, lay.content);
 
@@ -238,8 +240,8 @@ fn draw_toast(f: &mut Frame, app: &App, colors: &Theme) {
     }
 
     let area = f.area();
-    let char_count = app.state.toast_msg.chars().count();
-    let w = (char_count + 6).min(area.width as usize) as u16;
+    let display_w = unicode_width::UnicodeWidthStr::width(app.state.toast_msg.as_str());
+    let w = (display_w as u16 + 6).min(area.width);
     let h = 3u16;
     let x = area.x + (area.width.saturating_sub(w)) / 2;
     let y = area.y + area.height.saturating_sub(10);
@@ -267,7 +269,7 @@ fn draw_toast(f: &mut Frame, app: &App, colors: &Theme) {
 }
 
 pub(crate) fn create_block<'a>(
-    title: impl Into<ratatui::text::Line<'a>>,
+    title: &'a str,
     style: &'a BlockStyle<'a>,
     focused: bool,
 ) -> CornerBlock<'a> {
@@ -281,12 +283,13 @@ pub(crate) fn create_block<'a>(
     } else {
         BorderType::Plain
     };
+    let title_line = ratatui::text::Line::from(styled_text::parse_styled(title, style.colors));
     let block = if style.border.enabled {
         Block::default()
             .borders(Borders::ALL)
             .border_type(border_type)
             .border_style(Style::default().fg(border_color))
-            .title(title)
+            .title(title_line)
             .title_style(Style::default().fg(border_color))
     } else {
         Block::default()
@@ -297,7 +300,7 @@ pub(crate) fn create_block<'a>(
                 style.colors.surface
             }))
             .style(Style::default().bg(style.colors.bg))
-            .title(title)
+            .title(title_line)
             .title_style(Style::default().fg(border_color))
             .padding(Padding::horizontal(1))
     };
@@ -306,6 +309,9 @@ pub(crate) fn create_block<'a>(
         .corner_color(corner)
         .corner_sizes(2, 1)
         .follow_corner_color(style.border.follow_corner_color)
+        .border_gradient(style.border.border_gradient.clone())
+        .border_gradient_speed(style.border.border_gradient_speed)
+        .tick(style.tick)
 }
 
 #[cfg(test)]

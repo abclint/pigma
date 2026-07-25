@@ -2,6 +2,7 @@ use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
+    text::Line,
     widgets::{Cell, Row, Table, TableState},
 };
 
@@ -9,6 +10,7 @@ use crate::config::ColumnDef;
 use crate::config::Theme;
 use crate::state::TableMode;
 use crate::ui::render_scrollbar;
+use crate::ui::styled_text;
 
 pub fn render_table(
     f: &mut Frame,
@@ -28,7 +30,10 @@ pub fn render_table(
 
     let header_cells: Vec<Cell> = headers
         .iter()
-        .map(|h| Cell::from(h.header.as_str()).style(Style::default().fg(colors.muted)))
+        .map(|h| {
+            let spans = styled_text::parse_styled(&h.header, colors);
+            Cell::from(Line::from(spans)).style(Style::default().fg(colors.muted))
+        })
         .collect();
     let header = Row::new(header_cells)
         .style(Style::default().add_modifier(Modifier::BOLD))

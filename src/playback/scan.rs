@@ -13,6 +13,10 @@ pub fn scan_local_music(dir: &std::path::Path) -> Vec<SongInfo> {
     let mut songs = Vec::new();
     for entry in entries.filter_map(|e| e.ok()) {
         let path = entry.path();
+        if path.is_dir() {
+            songs.extend(scan_local_music(&path));
+            continue;
+        }
         if !path.is_file() {
             continue;
         }

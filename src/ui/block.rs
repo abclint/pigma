@@ -5,6 +5,8 @@ use ratatui::{
     widgets::{Block, Widget},
 };
 
+use crate::utils::gradient_color;
+
 pub struct CornerBlock<'a> {
     block: Block<'a>,
     tl_color: Color,
@@ -13,8 +15,10 @@ pub struct CornerBlock<'a> {
     br_color: Color,
     h_size: u16,
     v_size: u16,
-    /// 横竖边框是否跟随 corner_color 的颜色
     follow_corner_color: bool,
+    border_gradient: Option<String>,
+    border_gradient_speed: f64,
+    tick: u64,
 }
 
 impl<'a> CornerBlock<'a> {
@@ -28,6 +32,9 @@ impl<'a> CornerBlock<'a> {
             h_size: 1,
             v_size: 1,
             follow_corner_color: false,
+            border_gradient: None,
+            border_gradient_speed: 0.0,
+            tick: 0,
         }
     }
 
@@ -47,6 +54,21 @@ impl<'a> CornerBlock<'a> {
 
     pub fn follow_corner_color(mut self, follow: bool) -> Self {
         self.follow_corner_color = follow;
+        self
+    }
+
+    pub fn border_gradient(mut self, preset: Option<String>) -> Self {
+        self.border_gradient = preset;
+        self
+    }
+
+    pub fn border_gradient_speed(mut self, speed: f64) -> Self {
+        self.border_gradient_speed = speed;
+        self
+    }
+
+    pub fn tick(mut self, tick: u64) -> Self {
+        self.tick = tick;
         self
     }
 
@@ -78,6 +100,7 @@ impl<'a> Widget for CornerBlock<'a> {
         let max_h = self.h_size.min(area.width / 2);
         let max_v = self.v_size.min(area.height / 2);
 
+        // corner pixels
         for i in 0..max_h {
             if let Some(cell) = buf.cell_mut((left + i, top)) {
                 cell.fg = tl;
@@ -108,8 +131,68 @@ impl<'a> Widget for CornerBlock<'a> {
             }
         }
 
-        // follow_corner_color: 将横竖边框也染成 corner 色
-        if self.follow_corner_color {
+        // border gradient: 优先于 follow_corner_color
+        if let Some(ref preset) = self.border_gradient
+            && !preset.is_empty()
+        {
+            let h_span = right.saturating_sub(left);
+            let v_span = bottom.saturating_sub(top);
+            let offset = self.tick as f32 * self.border_gradient_speed as f32;
+
+            // top edge: left → right
+            for x in left..=right {
+                let base = if h_span == 0 {
+                    0.0
+                } else {
+                    (x - left) as f32 / h_span as f32
+                };
+                let t = (base + offset).rem_euclid(1.0);
+                let [r, g, b] = gradient_color(preset, t);
+                if let Some(cell) = buf.cell_mut((x, top)) {
+                    cell.fg = Color::Rgb(r, g, b);
+                }
+            }
+            // bottom edge: right → left (reversed for clockwise scroll)
+            for x in left..=right {
+                let base = if h_span == 0 {
+                    0.0
+                } else {
+                    (right - x) as f32 / h_span as f32
+                };
+                let t = (base + offset).rem_euclid(1.0);
+                let [r, g, b] = gradient_color(preset, t);
+                if let Some(cell) = buf.cell_mut((x, bottom)) {
+                    cell.fg = Color::Rgb(r, g, b);
+                }
+            }
+            // left edge: top → bottom
+            for y in top..=bottom {
+                let base = if v_span == 0 {
+                    0.0
+                } else {
+                    (y - top) as f32 / v_span as f32
+                };
+                let t = (base + offset).rem_euclid(1.0);
+                let [r, g, b] = gradient_color(preset, t);
+                if let Some(cell) = buf.cell_mut((left, y)) {
+                    cell.fg = Color::Rgb(r, g, b);
+                }
+            }
+            // right edge: bottom → top (reversed for clockwise scroll)
+            for y in top..=bottom {
+                let base = if v_span == 0 {
+                    0.0
+                } else {
+                    (bottom - y) as f32 / v_span as f32
+                };
+                let t = (base + offset).rem_euclid(1.0);
+                let [r, g, b] = gradient_color(preset, t);
+                if let Some(cell) = buf.cell_mut((right, y)) {
+                    cell.fg = Color::Rgb(r, g, b);
+                }
+            }
+        } else if self.follow_corner_color {
+            // follow_corner_color: 将横竖边框也染成 corner 色
             for x in (left + max_h)..=(right - max_h) {
                 if let Some(cell) = buf.cell_mut((x, top)) {
                     cell.fg = tl;

@@ -27,7 +27,7 @@ pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> color_eyre::Resu
             }
             KeyCode::Char('l' | 'L') => {
                 app.playback.clear_queue();
-                app.toast("🗑  已清空播放队列".into());
+                app.toast("   已清空播放队列".into());
                 return Ok(());
             }
             _ => {}

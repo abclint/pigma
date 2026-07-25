@@ -159,8 +159,8 @@ pub fn default_song_columns() -> Vec<ColumnDef> {
         ColumnDef {
             header: "ARTIST".into(),
             field: "singer".into(),
-            width: Some(16),
-            min_width: None,
+            width: None,
+            min_width: Some(16),
             ratio: None,
         },
         ColumnDef {
@@ -192,8 +192,8 @@ pub fn default_songlist_columns() -> Vec<ColumnDef> {
         ColumnDef {
             header: "AUTHOR".into(),
             field: "author".into(),
-            width: Some(16),
-            min_width: None,
+            width: None,
+            min_width: Some(16),
             ratio: None,
         },
     ]
@@ -240,8 +240,8 @@ pub fn default_download_columns() -> Vec<ColumnDef> {
         ColumnDef {
             header: "ARTIST".into(),
             field: "singer".into(),
-            width: Some(16),
-            min_width: None,
+            width: None,
+            min_width: Some(16),
             ratio: None,
         },
     ]
@@ -296,8 +296,10 @@ impl ColumnsConfig {
     pub fn for_content(&self, content_type: ContentType, api: Option<&str>) -> &[ColumnDef] {
         match content_type {
             ContentType::Songs => {
-                if let Some(api) = api
-                    && let Some(cols) = self.overrides.get(api)
+                // Only apply overrides for song-type APIs (e.g. "__download__"),
+                // not for list-type APIs like "toplist" whose override has wrong fields.
+                if let Some("__download__") = api
+                    && let Some(cols) = self.overrides.get("__download__")
                 {
                     return cols;
                 }

@@ -1,7 +1,7 @@
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Modifier, Style},
+    style::Style,
     text::{Line, Span},
     widgets::Paragraph,
 };
@@ -28,32 +28,17 @@ pub fn render_breadcrumb(f: &mut Frame, nav: &NavState, bs: &BlockStyle<'_>, are
         let mut parts = styled_text::parse_styled(section, colors);
         if !item.is_empty() {
             parts.push(Span::styled(" / ", Style::default().fg(colors.muted)));
-            parts.push(Span::styled(
-                item,
-                Style::default()
-                    .fg(colors.muted)
-                    .add_modifier(Modifier::BOLD),
-            ));
+            parts.extend(styled_text::parse_styled(item, colors));
         }
         parts.push(Span::styled(" / ", Style::default().fg(colors.muted)));
-        parts.push(Span::styled(
-            sub,
-            Style::default()
-                .fg(colors.accent)
-                .add_modifier(Modifier::BOLD),
-        ));
+        parts.extend(styled_text::parse_styled(sub, colors));
         Line::from(parts)
     } else if item.is_empty() {
         Line::from(styled_text::parse_styled(section, colors))
     } else {
         let mut parts = styled_text::parse_styled(section, colors);
         parts.push(Span::styled(" / ", Style::default().fg(colors.muted)));
-        parts.push(Span::styled(
-            item,
-            Style::default()
-                .fg(colors.accent)
-                .add_modifier(Modifier::BOLD),
-        ));
+        parts.extend(styled_text::parse_styled(item, colors));
         Line::from(parts)
     };
 
