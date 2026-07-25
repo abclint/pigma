@@ -144,7 +144,10 @@ pub struct CoverState(pub Arc<Mutex<Option<StatefulProtocol>>>);
 impl std::fmt::Debug for CoverState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CoverState")
-            .field("has_cover", &self.0.lock().map(|g| g.is_some()).unwrap_or(false))
+            .field(
+                "has_cover",
+                &self.0.lock().map(|g| g.is_some()).unwrap_or(false),
+            )
             .finish()
     }
 }
