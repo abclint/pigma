@@ -5,6 +5,33 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 本项目遵循 [语义化版本控制](https://semver.org/lang/zh-CN/)。
 
+## [0.1.3] - 2026-07-25
+
+### 新增
+- 专辑封面显示：基于 `ratatui-image` 实现终端内专辑封面渲染，自动裁切为圆形
+- 播放栏多布局支持：`default`、`modern`、`minimal` 三种布局，通过 `playerbar.layout` 配置
+- 播放栏组件可见性配置：`playerbar.visible` 支持独立控制封面、音量、播放模式、加载动画的显示
+- 边框渐变动画：`border_gradient` 和 `border_gradient_speed` 配置项，支持顺时针流动渐变效果
+- 配置文件示例：新增 `config.example.toml`，包含所有配置项的完整说明
+- 集中式 API 服务层（`service.rs`）：统一封装端点解析、缓存集成和错误映射
+- 本地音乐递归扫描：自动扫描子目录中的音频文件
+- 搜索结果数量限制：新增 `search_limit` 配置项
+- 缓存自动淘汰：基于 LRU 策略自动清理超过 2GB 的缓存，支持 stale 条目清理
+
+### 变更
+- 重构所有 API 调用从 `self.api` 迁移至 `self.service.client()`，解耦业务层与 API 层
+- 播放栏拆分为多模块结构（`widgets`、`build_layout`、`default_layout`、`modern_layout`、`minimal_layout`）
+- 缓存索引锁从 `Mutex` 升级为 `RwLock`，提升并发读性能
+- NCM 网络重试次数从 3 次降为 2 次，更快回退到 YouTube 音源
+- buffer underrun/overrun 错误静默忽略，rodio 会自动恢复
+- `PlaybackEngine::new` 直接接收 `CacheManager` 而非分散的路径/模板参数
+- 移除 `Cargo.toml` 中已注释的 dev-dependencies
+
+### 修复
+- 修复缓存索引可能包含未完成下载条目的问题（改为下载完成后才写入索引）
+- 修复文件已删除但缓存索引未清理导致的 stale 条目（退出时自动清理）
+- 修复本地音乐扫描遗漏子目录音频文件的问题
+
 ## [0.1.2] - 2026-07-23
 
 ### 新增

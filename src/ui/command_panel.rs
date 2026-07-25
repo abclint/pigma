@@ -28,6 +28,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     let style = BlockStyle {
         colors,
         border: &app.state.border,
+        tick: app.state.tick,
     };
     let block = super::create_block(title, &style, true);
     let inner = block.inner(popup_area);

@@ -1,14 +1,12 @@
 use super::{App, send_event};
 use crate::event::{NavigationEvent, PlaybackEvent};
 use crate::playback::types::parse_lyric_lines;
-use crate::state::{ContentState, PaginationInfo, TableMode};
+use crate::state::{ContentState, PaginationInfo};
+use image::GenericImageView;
 
 impl App {
     pub(super) fn handle_content_loaded(&mut self, content: ContentState) {
         self.state.navigation.set_content(content);
-        self.state.navigation.content_selected = 0;
-        self.state.navigation.table_mode = TableMode::Row;
-        self.state.navigation.content_column_selected = 0;
     }
 
     pub(super) fn handle_load_more(&mut self) {
@@ -17,33 +15,22 @@ impl App {
             _ => return,
         };
 
-        let api = self.api.clone();
+        let service = self.service.clone();
         let sender = self.state.events.sender();
         let offset = pg.offset + pg.limit;
 
         tokio::spawn(async move {
-            match api.user_cloud_disk(offset, pg.limit).await {
-                Ok(result) => {
-                    let new_pg = PaginationInfo {
-                        api: pg.api.clone(),
-                        offset,
-                        limit: pg.limit,
-                        has_more: result.has_more,
-                        total: result.count,
-                        loading: false,
-                    };
-                    send_event(
-                        &sender,
-                        NavigationEvent::ContentLoadedPaged {
-                            content: ContentState::Songs(result.songs),
-                            pagination: new_pg,
-                        }
-                        .into(),
-                    );
-                }
-                Err(e) => {
-                    log::error!("Failed to load more cloud disk songs: {e}");
-                }
+            if let Some((content, pagination)) =
+                service.load_more_cloud_disk(offset, pg.limit, pg.api).await
+            {
+                send_event(
+                    &sender,
+                    NavigationEvent::ContentLoadedPaged {
+                        content,
+                        pagination,
+                    }
+                    .into(),
+                );
             }
         });
     }
@@ -63,7 +50,7 @@ impl App {
 
             let ttl = self.config.content_cache_ttl;
             if ttl > 0 && !pagination.api.is_empty() {
-                let cache = self.playback.cache().clone();
+                let cache = self.service.cache().clone();
                 let api_str = pagination.api.clone();
                 let content_clone = (*self.state.navigation.content).clone();
                 tokio::task::spawn_blocking(move || {
@@ -72,9 +59,6 @@ impl App {
             }
         } else {
             self.state.navigation.set_content(content);
-            self.state.navigation.content_selected = 0;
-            self.state.navigation.table_mode = TableMode::Row;
-            self.state.navigation.content_column_selected = 0;
             self.state.navigation.pagination = Some(pagination);
         }
     }
@@ -99,20 +83,10 @@ impl App {
             .and_then(|item| item.api.as_deref())
             == Some("user_radio_sublist");
 
-        let api = self.api.clone();
+        let service = self.service.clone();
         let sender = self.state.events.sender();
         tokio::spawn(async move {
-            let (state, detail_name) = if is_radio {
-                match api.radio_program(id, 0, 1000).await {
-                    Ok(songs) => (ContentState::Songs(songs), None),
-                    Err(e) => (ContentState::Error(e.to_string()), None),
-                }
-            } else {
-                match api.song_list_detail(id).await {
-                    Ok(detail) => (ContentState::Songs(detail.songs), Some(detail.name)),
-                    Err(e) => (ContentState::Error(e.to_string()), None),
-                }
-            };
+            let (state, detail_name) = service.load_playlist_detail(id, is_radio).await;
             send_event(&sender, NavigationEvent::ContentLoaded(state).into());
             let breadcrumb = detail_name.or(name);
             if let Some(name) = breadcrumb {
@@ -154,14 +128,13 @@ impl App {
             }
             self.toast(format!("▶  {}", song.name));
             let song_id = song.id;
-            let cache = self.playback.cache().clone();
-            let api = self.api.clone();
+            let service = self.service.clone();
             let sender = self.state.events.sender();
 
             tokio::spawn(async move {
-                if let Some(cached) = cache.load_lyrics_cache_async(song_id).await {
-                    let lyric_lines = parse_lyric_lines(&cached.lyric);
-                    let tlyric_lines = parse_lyric_lines(&cached.tlyric);
+                if let Some(lyrics) = service.load_lyrics(song_id).await {
+                    let lyric_lines = parse_lyric_lines(&lyrics.lyric);
+                    let tlyric_lines = parse_lyric_lines(&lyrics.tlyric);
                     send_event(
                         &sender,
                         PlaybackEvent::LyricsLoaded {
@@ -171,35 +144,45 @@ impl App {
                         }
                         .into(),
                     );
-                    return;
-                }
-
-                match api.song_lyric(song_id).await {
-                    Ok(lyrics) => {
-                        let cache_clone = cache.clone();
-                        let lyrics_clone = lyrics.clone();
-                        tokio::task::spawn_blocking(move || {
-                            cache_clone.save_lyrics_cache(song_id, &lyrics_clone);
-                        })
-                        .await
-                        .ok();
-                        let lyric_lines = parse_lyric_lines(&lyrics.lyric);
-                        let tlyric_lines = parse_lyric_lines(&lyrics.tlyric);
-                        send_event(
-                            &sender,
-                            PlaybackEvent::LyricsLoaded {
-                                song_id,
-                                lyrics: lyric_lines,
-                                translated_lyrics: tlyric_lines,
-                            }
-                            .into(),
-                        );
-                    }
-                    Err(e) => {
-                        log::error!("Failed to fetch lyrics for {song_id}: {e}");
-                    }
                 }
             });
+
+            // Load cover image
+            if !song.pic_url.is_empty() {
+                let pic_url = song.pic_url.clone();
+                let cover = self.playback.state.cover.0.clone();
+                let picker = self.picker.clone();
+                tokio::task::spawn_blocking(move || {
+                    if let Ok(resp) = reqwest::blocking::get(&pic_url)
+                        && let Ok(bytes) = resp.bytes()
+                        && let Ok(img) = image::load_from_memory(&bytes)
+                    {
+                        // Apply circular mask
+                        let (w, h) = img.dimensions();
+                        let size = w.min(h);
+                        let x = (w - size) / 2;
+                        let y = (h - size) / 2;
+                        let mut square = img.crop_imm(x, y, size, size).to_rgba8();
+
+                        let r = size as f32 / 2.0;
+                        let cx = r;
+                        let cy = r;
+                        for (px, py, pixel) in square.enumerate_pixels_mut() {
+                            let dx = px as f32 + 0.5 - cx;
+                            let dy = py as f32 + 0.5 - cy;
+                            if dx * dx + dy * dy > r * r {
+                                *pixel = image::Rgba([0u8, 0, 0, 0]);
+                            }
+                        }
+
+                        let dyn_img = image::DynamicImage::ImageRgba8(square);
+                        let protocol = picker.new_resize_protocol(dyn_img);
+                        if let Ok(mut guard) = cover.lock() {
+                            *guard = Some(protocol);
+                        }
+                    }
+                });
+            }
         }
     }
 }

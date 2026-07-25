@@ -20,6 +20,7 @@ futures = {
     "std",
   ]
 }
+image = "0.25.10"
 log = { version = "0.4.33", features = ["serde", "std"] }
 ncm-api = { path = "crates/ncm-api" }
 qrcode = "0.14.1"
@@ -35,6 +36,12 @@ ratatui = {
     "underline-color",
   ]
 }
+ratatui-image = {
+  version = "11.0.6",
+  default-features = false,
+  features = ["image-defaults", "crossterm"]
+}
+reqwest = { version = "0.13.4", features = ["blocking"] }
 rodio = {
   version = "0.22.2",
   default-features = false,
@@ -62,13 +69,6 @@ unicode-width = "0.2.2"
 url = "2.5.8"
 y7dl = { path = "crates/y7dl" }
 
-# [dev-dependencies]
-# colorgrad = { version = "0.8.0", features = ["preset"] }
-# image = "0.25"
-# ratatui-image = "11.0"
-# regex = "1.13.1"
-# reqwest = { version = "0.13.4", features = ["blocking", "query"] }
-
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2.189"
 
@@ -79,3 +79,7 @@ strip = true
 lto = true
 panic = "abort"
 codegen-units = 1
+
+# [features]
+# default = ["vorbis"]
+# vorbis = ["rodio/vorbis"]

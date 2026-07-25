@@ -1,7 +1,8 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use ncm_api::SongInfo;
+use ratatui_image::protocol::StatefulProtocol;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,6 +55,7 @@ pub struct PlaybackState {
     pub translated_lyrics: Option<Vec<LyricLine>>,
     pub mode: PlayMode,
     pub cached: bool,
+    pub cover: CoverState,
 }
 
 impl Default for PlaybackState {
@@ -70,6 +72,7 @@ impl Default for PlaybackState {
             translated_lyrics: None,
             mode: PlayMode::Sequential,
             cached: false,
+            cover: CoverState::default(),
         }
     }
 }
@@ -112,6 +115,10 @@ impl PlaybackState {
 
     pub fn on_error(&mut self, err: String) {
         log::error!("Playback error: {}", err);
+        // buffer underrun/overrun is transient — rodio recovers automatically
+        if err.contains("buffer underrun") || err.contains("overrun") {
+            return;
+        }
         self.error = Some(err);
     }
 
@@ -127,6 +134,33 @@ impl PlaybackState {
             self.lyrics = Some(lyrics);
             self.translated_lyrics = Some(translated_lyrics);
         }
+    }
+}
+
+/// Wrapper for `StatefulProtocol` that implements `Debug` and `Clone`.
+/// Uses `Arc<Mutex<...>>` for thread-safe interior mutability.
+pub struct CoverState(pub Arc<Mutex<Option<StatefulProtocol>>>);
+
+impl std::fmt::Debug for CoverState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CoverState")
+            .field(
+                "has_cover",
+                &self.0.lock().map(|g| g.is_some()).unwrap_or(false),
+            )
+            .finish()
+    }
+}
+
+impl Clone for CoverState {
+    fn clone(&self) -> Self {
+        Self(Arc::clone(&self.0))
+    }
+}
+
+impl Default for CoverState {
+    fn default() -> Self {
+        Self(Arc::new(Mutex::new(None)))
     }
 }
 

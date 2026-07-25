@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use ncm_api::{NcmClient, NcmError, SongInfo, SongQuality};
@@ -21,10 +20,8 @@ pub struct AudioSource {
 impl AudioSource {
     pub fn new(
         api: Arc<NcmClient>,
-        downloads_dir: PathBuf,
-        base_dir: PathBuf,
+        cache: CacheManager,
         quality: SongQuality,
-        template: String,
         proxy: String,
     ) -> Self {
         let y7dl_client = if proxy.is_empty() {
@@ -34,7 +31,7 @@ impl AudioSource {
         };
         Self {
             api,
-            cache: CacheManager::new(downloads_dir, base_dir, template),
+            cache,
             quality,
             y7dl: Arc::new(y7dl_client),
         }
@@ -126,6 +123,8 @@ impl AudioSource {
             .await
             .map_err(|e| format!("YouTube流下载失败: {e}"))?;
 
+        self.cache.mark_cached(song, ext);
+
         Ok(SharedReader(Arc::new(Mutex::new(Box::new(reader)))))
     }
 
@@ -163,6 +162,8 @@ impl AudioSource {
         let reader = StreamDownload::new_http(url, provider, Settings::default())
             .await
             .map_err(|e| format!("流下载失败: {e}"))?;
+
+        self.cache.mark_cached(song, ext);
 
         Ok(SharedReader(Arc::new(Mutex::new(Box::new(reader)))))
     }
@@ -204,14 +205,14 @@ impl AudioSource {
             unreachable!("is_cached checked above");
         }
 
-        // Try NCM source — transient network failures are retried up to 3 times,
+        // Try NCM source — transient network failures are retried once,
         // then fall back to YouTube. All other failures fall back immediately.
-        for attempt in 0..3 {
+        for attempt in 0..2 {
             match self.resolve_ncm(song).await {
                 Ok(input) => return Ok(input),
-                Err(e) if e.starts_with("NETWORK:") && attempt < 2 => {
+                Err(e) if e.starts_with("NETWORK:") && attempt < 1 => {
                     log::warn!(
-                        "NCM网络错误，重试 {}/3: {} - {}: {}",
+                        "NCM网络错误，重试 {}/2: {} - {}: {}",
                         attempt + 1,
                         song.name,
                         song.singer,
@@ -231,7 +232,7 @@ impl AudioSource {
         }
 
         log::warn!(
-            "NCM网络错误，3次重试失败，fallback到YouTube: {} - {}",
+            "NCM网络错误，2次重试失败，fallback到YouTube: {} - {}",
             song.name,
             song.singer
         );

@@ -14,11 +14,11 @@ impl App {
             LoginMethod::Email => {
                 let username = login.username.value.clone();
                 let password = login.password.value.clone();
-                let api = self.api.clone();
+                let client = self.service.client().clone();
                 let sender = self.state.events.sender();
 
                 tokio::spawn(async move {
-                    match api.login(&username, &password).await {
+                    match client.login(&username, &password).await {
                         Ok(info) => {
                             send_event(&sender, AuthEvent::Success(info).into());
                         }
@@ -32,11 +32,11 @@ impl App {
                 if login.captcha_sent {
                     let phone = login.username.value.clone();
                     let captcha = login.password.value.clone();
-                    let api = self.api.clone();
+                    let client = self.service.client().clone();
                     let sender = self.state.events.sender();
 
                     tokio::spawn(async move {
-                        match api.login_cellphone("86", &phone, &captcha).await {
+                        match client.login_cellphone("86", &phone, &captcha).await {
                             Ok(info) => {
                                 send_event(&sender, AuthEvent::Success(info).into());
                             }
@@ -47,11 +47,11 @@ impl App {
                     });
                 } else {
                     let phone = login.username.value.clone();
-                    let api = self.api.clone();
+                    let client = self.service.client().clone();
                     let sender = self.state.events.sender();
 
                     tokio::spawn(async move {
-                        match api.captcha("86", &phone).await {
+                        match client.captcha("86", &phone).await {
                             Ok(()) => {
                                 send_event(&sender, AuthEvent::CaptchaSent.into());
                             }
@@ -63,11 +63,11 @@ impl App {
                 }
             }
             LoginMethod::QR => {
-                let api = self.api.clone();
+                let client = self.service.client().clone();
                 let sender = self.state.events.sender();
 
                 tokio::spawn(async move {
-                    match api.login_qr_create().await {
+                    match client.login_qr_create().await {
                         Ok((url, key)) => {
                             send_event(&sender, AuthEvent::QRCreated { url, key }.into());
                         }
@@ -84,7 +84,7 @@ impl App {
         self.toast(format!("登录成功: {}", info.nickname));
         self.state.navigation.login.loading = false;
         self.state.navigation.user = Some(info);
-        self.api.flush_cookies();
+        self.service.client().flush_cookies();
         if self.state.navigation.page == Page::Login {
             self.navigate_to_main();
         }
@@ -108,16 +108,16 @@ impl App {
         self.state.navigation.login.qr_key = key.clone();
         self.state.navigation.login.qr_status_text = "等待扫码...".to_string();
 
-        let api = self.api.clone();
+        let client = self.service.client().clone();
         let sender = self.state.events.sender();
         tokio::spawn(async move {
             let mut scanned = false;
             for _ in 0..150 {
                 sleep(Duration::from_secs(2)).await;
-                match api.login_qr_check(&key).await {
+                match client.login_qr_check(&key).await {
                     Ok(resp) => match resp.code {
                         803 => {
-                            match api.login_status().await {
+                            match client.login_status().await {
                                 Ok(info) => {
                                     send_event(&sender, AuthEvent::Success(info).into());
                                 }

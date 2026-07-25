@@ -1,0 +1,167 @@
+# =============================================================================
+# Pigma 配置文件示例
+# 配置文件路径: ~/.config/pigma/config.toml
+# 未配置的字段会使用默认值
+# =============================================================================
+
+# 默认主题名称 (对应 themes 中定义的 name)
+default_theme = "default"
+
+# 快进/快退间隔 (秒)
+seek_interval_secs = 15
+
+# 内容缓存过期时间 (秒), 0 表示不缓存
+content_cache_ttl = 300
+
+# 搜索结果数量限制
+search_limit = 100
+
+# 歌词渐变效果: "rainbow", "fire", "ocean", "forest", "sunset", "neon", "pastel", "monochrome"
+lyric_gradient = "rainbow"
+
+# 音质: "standard", "higher", "exhigh", "lossless", "hires", "jyeffect", "sky", "jymaster"
+quality = "standard"
+
+# 下载缓存目录 (相对于缓存目录或绝对路径)
+cache_dir = "downloads"
+
+# 缓存文件命名模板, 可用变量: {id}, {name}, {singer}, {album}
+cache_template = "{name}-{singer}"
+
+# 代理地址 (用于网络请求),fallback音源到youtube会用
+proxy = "http://127.0.0.1:7890"
+
+# =============================================================================
+# 边框配置
+# =============================================================================
+[border]
+# 是否显示边框
+enabled = true
+# 是否使用圆角边框
+rounded = false
+# 边框颜色是否跟随角落颜色
+follow_corner_color = false
+# 边框渐变效果名称 (可选, 不设置则无渐变)，优先级最高
+# border_gradient = "rainbow"
+# 边框渐变速度 (每秒变化量, 0 表示静态)
+# border_gradient_speed = 0.5
+
+# =============================================================================
+# 播放器栏配置
+# =============================================================================
+[playerbar]
+# 播放栏布局: "default", "modern", "minimal"
+layout = "modern"
+
+# 进度条填充符号
+filled_symbol = "━"
+# 进度条未填充符号
+unfilled_symbol = "─"
+# 进度条填充颜色 (颜色名或 hex)
+filled_color = "accent"
+# 进度条未填充颜色
+unfilled_color = "text"
+# 缓冲时进度条未填充颜色
+unfilled_color_cached = "warning"
+
+# 是否启用进度条渐变效果
+gradient_enabled = false
+# 渐变预设: "warm", "cool", "sunset", "ocean", "forest", "neon", "pastel", "rainbow"
+gradient_preset = "warm"
+
+# 播放栏各组件可见性(建议暂时别用，音量控制没写好)
+[playerbar.visible]
+# 是否显示封面
+cover = true
+# 是否显示音量控制
+volume = true
+# 是否显示播放模式图标
+mode_icon = true
+# 是否显示加载动画
+spinner = true
+
+# =============================================================================
+# 标题配置 (支持 {count} 变量)
+# =============================================================================
+[titles]
+sidebar = " NAVIGATION"
+playlist = "♪ QUEUE ({count})"
+lyrics = "♪ LYRICS"
+
+# =============================================================================
+# 日志配置
+# =============================================================================
+[logger]
+# 日志级别: "error", "warn", "info", "debug", "trace"
+log_level = "debug"
+
+# =============================================================================
+# 自定义主题
+# =============================================================================
+# 颜色格式: hex (#rrggbb), named (red, blue, ...), 或 indexed (0-255)
+# [[themes]]
+# name = "my_theme"
+# bg = "#0e0e0e"           # 背景色
+# surface = "#160e12"      # 表面色 (卡片、面板背景)
+# text = "#ffffff"          # 主文本色
+# accent = "#c20c0c"       # 强调色 (播放按钮、选中项)
+# highlight = "#4ade80"     # 高亮色
+# muted = "#555555"         # 次要文本色 (歌手、专辑)
+# error = "#f4535a"         # 错误色
+# warning = "#587fa6"       # 警告色
+
+# =============================================================================
+# 自定义列定义
+# =============================================================================
+# [columns]
+# songs 列表页列定义
+# header = 显示名称, field = 数据字段名
+# width: 固定宽度 (可选)
+# min_width: 最小宽度 (可选)
+# ratio: 比例 (可选, 格式 [分子, 分母])
+#
+# [columns.songs]
+# songs = [
+#   { header = "TITLE", field = "name", ratio = [3, 8] },
+#   { header = "ARTIST", field = "singer", ratio = [2, 8] },
+#   { header = "ALBUM", field = "album", ratio = [2, 8] },
+#   { header = "DURATION", field = "duration", width = 10 },
+# ]
+#
+# [columns.songlist]
+# songlist = [
+#   { header = "NAME", field = "name", ratio = [3, 4] },
+#   { header = "AUTHOR", field = "singer", ratio = [1, 4] },
+# ]
+#
+# 自定义页面列覆盖
+# [columns.overrides]
+# toplist = [
+#   { header = "RANK", field = "index", width = 6 },
+#   { header = "SONG", field = "name" },
+# ]
+# hotsearch = [
+#   { header = "#", field = "index", width = 4 },
+#   { header = "KEYWORD", field = "name" },
+# ]
+
+# =============================================================================
+# 导航栏配置
+# =============================================================================
+# [navigation]
+# [[navigation.sections]]
+# title = "DISCOVER"
+# [[navigation.sections.items]]
+# name = "Daily Recommend"
+# api = "recommend_songs"
+# title_template = "Daily Recommend"  # 可选, 用于面包屑显示
+#
+# [[navigation.sections.items]]
+# name = "Top Lists"
+# api = "toplist"
+#
+# [[navigation.sections]]
+# title = "MY MUSIC"
+# [[navigation.sections.items]]
+# name = "Liked"
+# api = "user_playlist_like"

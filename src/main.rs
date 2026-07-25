@@ -11,6 +11,7 @@ pub mod input;
 pub mod layout;
 pub mod logger;
 pub mod playback;
+pub mod service;
 pub mod state;
 pub mod text_input;
 pub mod ui;

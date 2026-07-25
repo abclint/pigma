@@ -1,5 +1,34 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LayoutType {
+    #[default]
+    Default,
+    Modern,
+    Minimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PlayerbarVisible {
+    pub cover: bool,
+    pub volume: bool,
+    pub mode_icon: bool,
+    pub spinner: bool,
+}
+
+impl Default for PlayerbarVisible {
+    fn default() -> Self {
+        Self {
+            cover: true,
+            volume: true,
+            mode_icon: true,
+            spinner: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlayerbarConfig {
     #[serde(default = "default_pb_filled_symbol")]
@@ -16,6 +45,10 @@ pub struct PlayerbarConfig {
     pub gradient_enabled: bool,
     #[serde(default = "default_gradient_preset")]
     pub gradient_preset: String,
+    #[serde(default)]
+    pub layout: LayoutType,
+    #[serde(default)]
+    pub visible: PlayerbarVisible,
 }
 
 fn default_pb_filled_symbol() -> String {
@@ -47,6 +80,8 @@ impl Default for PlayerbarConfig {
             unfilled_color_cached: default_pb_unfilled_color_cached(),
             gradient_enabled: false,
             gradient_preset: default_gradient_preset(),
+            layout: LayoutType::default(),
+            visible: PlayerbarVisible::default(),
         }
     }
 }

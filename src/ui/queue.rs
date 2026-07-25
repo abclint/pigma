@@ -20,7 +20,7 @@ pub fn draw_queue_table(
     let colors = bs.colors;
     let count = playback.queue_len();
     let title = crate::ui::render_title(title_template, "", count);
-    let block = create_block(title, bs, false);
+    let block = create_block(&title, bs, false);
     let inner = block.inner(area);
     f.render_widget(block, area);
 

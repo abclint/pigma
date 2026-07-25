@@ -4,7 +4,7 @@ use std::sync::Arc;
 use super::{App, send_event};
 use crate::api::ApiEndpoint;
 use crate::event::NavigationEvent;
-use crate::state::{ContentState, PaginationInfo};
+use crate::state::ContentState;
 
 impl App {
     pub(super) fn handle_nav_select(&mut self, api_str: String) -> color_eyre::Result<()> {
@@ -32,11 +32,12 @@ impl App {
         if api == ApiEndpoint::Search {
             self.state.navigation.nav.subtitle = Some("热搜榜".into());
         }
-        let cache = self.playback.cache().clone();
-        let api_client = self.api.clone();
+        let cache = self.service.cache().clone();
+        let service = self.service.clone();
         let sender = self.state.events.sender();
         let uid = self.state.navigation.user.as_ref().map(|u| u.uid);
         let ttl = self.config.content_cache_ttl;
+        let limit = self.config.search_limit;
 
         tokio::spawn(async move {
             if api == ApiEndpoint::Download {
@@ -55,125 +56,23 @@ impl App {
                 send_event(&sender, NavigationEvent::ContentLoaded(cached).into());
                 return;
             }
+
             // Handle LikedSongs separately: also fetch playlist ID for heartbeat mode
             if api == ApiEndpoint::LikedSongs
                 && let Some(uid) = uid
             {
-                let songs_result = api_client.liked_songs(uid).await;
-                match songs_result {
-                    Ok(songs) => {
-                        let state = ContentState::Songs(songs);
-                        send_event(&sender, NavigationEvent::ContentLoaded(state).into());
-                        if let Ok(lists) = api_client.user_song_list(uid, 0, 50).await
-                            && let Some(liked) = lists.iter().find(|l| l.name == "我喜欢的音乐")
-                        {
-                            send_event(
-                                &sender,
-                                crate::event::PlaybackEvent::SetPlaylistId(liked.id).into(),
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        send_event(
-                            &sender,
-                            NavigationEvent::ContentLoaded(ContentState::Error(e.to_string()))
-                                .into(),
-                        );
-                    }
+                let (state, playlist_id) = service.load_liked_songs(uid, limit).await;
+                send_event(&sender, NavigationEvent::ContentLoaded(state).into());
+                if let Some(id) = playlist_id {
+                    send_event(
+                        &sender,
+                        crate::event::PlaybackEvent::SetPlaylistId(id).into(),
+                    );
                 }
                 return;
             }
 
-            let result = match api {
-                ApiEndpoint::RecommendResource => api_client
-                    .recommend_resource()
-                    .await
-                    .map(|c| (ContentState::SongLists(c), None)),
-                ApiEndpoint::Toplist => api_client
-                    .toplist()
-                    .await
-                    .map(|c| (ContentState::TopLists(c), None)),
-                ApiEndpoint::TopSongList => api_client
-                    .top_song_list("全部", "hot", 0, 50)
-                    .await
-                    .map(|c| (ContentState::SongLists(c), None)),
-                ApiEndpoint::UserRadioSublist => api_client
-                    .user_radio_sublist(0, 50)
-                    .await
-                    .map(|c| (ContentState::SongLists(c), None)),
-                ApiEndpoint::RecommendSongs => api_client
-                    .recommend_songs()
-                    .await
-                    .map(|c| (ContentState::Songs(c), None)),
-                ApiEndpoint::UserCloudDisk => {
-                    let api_str_clone = api_str.clone();
-                    api_client.user_cloud_disk(0, 50).await.map(move |result| {
-                        (
-                            ContentState::Songs(result.songs),
-                            Some(PaginationInfo {
-                                api: api_str_clone,
-                                offset: 0,
-                                limit: 50,
-                                has_more: result.has_more,
-                                total: result.count,
-                                loading: false,
-                            }),
-                        )
-                    })
-                }
-                ApiEndpoint::Recent => api_client
-                    .recent_songs(100)
-                    .await
-                    .map(|c| (ContentState::Songs(c), None)),
-                ApiEndpoint::UserSongList => {
-                    if let Some(uid) = uid {
-                        api_client
-                            .user_song_list(uid, 0, 50)
-                            .await
-                            .map(|c| (ContentState::SongLists(c), None))
-                    } else {
-                        Ok((ContentState::Error("未登录".into()), None))
-                    }
-                }
-                ApiEndpoint::UserCreatedSongList => {
-                    if let Some(uid) = uid {
-                        api_client
-                            .user_created_playlist(uid, 0, 50)
-                            .await
-                            .map(|c| (ContentState::SongLists(c), None))
-                    } else {
-                        Ok((ContentState::Error("未登录".into()), None))
-                    }
-                }
-                ApiEndpoint::UserSubscribedSongList => {
-                    if let Some(uid) = uid {
-                        api_client
-                            .user_collected_playlist(uid, 0, 50)
-                            .await
-                            .map(|c| (ContentState::SongLists(c), None))
-                    } else {
-                        Ok((ContentState::Error("未登录".into()), None))
-                    }
-                }
-                ApiEndpoint::Search => api_client.search_hot().await.map(|items| {
-                    (
-                        ContentState::HotSearch(items.iter().map(|h| h.keyword.clone()).collect()),
-                        None,
-                    )
-                }),
-                ApiEndpoint::Download => unreachable!(),
-                ApiEndpoint::LocalMusic => unreachable!(),
-                ApiEndpoint::TopSingers => api_client
-                    .top_artists(0, 50)
-                    .await
-                    .map(|c| (ContentState::Singers(c), None)),
-                ApiEndpoint::LikedSongs => unreachable!(),
-            };
-
-            let (state, pagination) = match result {
-                Ok((content, pg)) => (content, pg),
-                Err(e) => (ContentState::Error(e.to_string()), None),
-            };
+            let (state, pagination) = service.resolve_content(api, uid, limit).await;
 
             if ttl > 0 && api != ApiEndpoint::Search {
                 let cache_clone = cache.clone();
@@ -214,10 +113,10 @@ impl App {
         self.state.navigation.push_breadcrumb();
         self.state.navigation.set_content(ContentState::Loading);
 
-        let api = self.api.clone();
+        let client = self.service.client().clone();
         let sender = self.state.events.sender();
         tokio::spawn(async move {
-            let result = api_call(api).await;
+            let result = api_call(client).await;
             let state = match result {
                 Ok(songs) => ContentState::Songs(songs),
                 Err(e) => ContentState::Error(e.to_string()),
@@ -244,8 +143,8 @@ impl App {
                 if let Some(song) = songs.get(row) {
                     let album_id = song.album_id;
                     let name = format!("{}: {}", column.header, song.album);
-                    self.navigate_to_entity(name, move |api| async move {
-                        api.album(album_id).await.map(|d| d.songs)
+                    self.navigate_to_entity(name, move |client| async move {
+                        client.album(album_id).await.map(|d| d.songs)
                     });
                 }
             }
@@ -256,8 +155,8 @@ impl App {
                         return Ok(());
                     }
                     let name = format!("{}: {}", column.header, song.singer);
-                    self.navigate_to_entity(name, move |api| async move {
-                        api.singer_songs(artist_id).await
+                    self.navigate_to_entity(name, move |client| async move {
+                        client.singer_songs(artist_id).await
                     });
                 }
             }
@@ -268,8 +167,8 @@ impl App {
                         return Ok(());
                     }
                     let name = format!("{}: {}", column.header, singer.name);
-                    self.navigate_to_entity(name, move |api| async move {
-                        api.singer_songs(artist_id).await
+                    self.navigate_to_entity(name, move |client| async move {
+                        client.singer_songs(artist_id).await
                     });
                 }
             }

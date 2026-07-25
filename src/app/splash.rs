@@ -30,7 +30,7 @@ pub(super) async fn check_network(_api: &ncm_api::NcmClient) -> bool {
 impl App {
     pub(super) fn start_splash_boot(&self) {
         let sender = self.state.events.sender();
-        let api = self.api.clone();
+        let client = self.service.client().clone();
         let music_dir = dirs::home_dir().unwrap_or_default().join("Music");
 
         tokio::spawn(async move {
@@ -52,7 +52,7 @@ impl App {
             send(0.05, "Initializing engine...", LogLevel::Success);
 
             send(0.10, "Checking network connectivity...", LogLevel::Info);
-            let online = check_network(&api).await;
+            let online = check_network(&client).await;
 
             if online {
                 send(
@@ -62,7 +62,7 @@ impl App {
                 );
 
                 send(0.35, "Loading user session...", LogLevel::Info);
-                if api.is_logged_in() {
+                if client.is_logged_in() {
                     send(0.45, "Session: cookies found", LogLevel::Success);
                 } else {
                     send(0.45, "Session: not logged in", LogLevel::Info);
