@@ -231,11 +231,12 @@ pub fn draw_cover(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: R
     if player.current_song.is_some() {
         // Try to render real cover image if available
         if let Ok(mut borrow) = player.cover.0.lock()
-            && let Some(protocol) = borrow.as_mut() {
-                let image = StatefulImage::new().resize(Resize::Fit(None));
-                f.render_stateful_widget(image, area, protocol);
-                return;
-            }
+            && let Some(protocol) = borrow.as_mut()
+        {
+            let image = StatefulImage::new().resize(Resize::Fit(None));
+            f.render_stateful_widget(image, area, protocol);
+            return;
+        }
 
         // Fallback to placeholder (no border)
         for y in 0..area.height {

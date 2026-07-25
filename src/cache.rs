@@ -350,7 +350,6 @@ impl CacheManager {
     }
 
     pub async fn list_cached_songs_async(&self) -> Vec<SongInfo> {
-        
         {
             let index = self.index.read().unwrap_or_else(|e| e.into_inner());
             self.collect_cached_songs(&index)

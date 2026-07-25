@@ -155,31 +155,32 @@ impl App {
                 tokio::task::spawn_blocking(move || {
                     if let Ok(resp) = reqwest::blocking::get(&pic_url)
                         && let Ok(bytes) = resp.bytes()
-                            && let Ok(img) = image::load_from_memory(&bytes) {
-                                // Apply circular mask
-                                let (w, h) = img.dimensions();
-                                let size = w.min(h);
-                                let x = (w - size) / 2;
-                                let y = (h - size) / 2;
-                                let mut square = img.crop_imm(x, y, size, size).to_rgba8();
+                        && let Ok(img) = image::load_from_memory(&bytes)
+                    {
+                        // Apply circular mask
+                        let (w, h) = img.dimensions();
+                        let size = w.min(h);
+                        let x = (w - size) / 2;
+                        let y = (h - size) / 2;
+                        let mut square = img.crop_imm(x, y, size, size).to_rgba8();
 
-                                let r = size as f32 / 2.0;
-                                let cx = r;
-                                let cy = r;
-                                for (px, py, pixel) in square.enumerate_pixels_mut() {
-                                    let dx = px as f32 + 0.5 - cx;
-                                    let dy = py as f32 + 0.5 - cy;
-                                    if dx * dx + dy * dy > r * r {
-                                        *pixel = image::Rgba([0u8, 0, 0, 0]);
-                                    }
-                                }
-
-                                let dyn_img = image::DynamicImage::ImageRgba8(square);
-                                let protocol = picker.new_resize_protocol(dyn_img);
-                                if let Ok(mut guard) = cover.lock() {
-                                    *guard = Some(protocol);
-                                }
+                        let r = size as f32 / 2.0;
+                        let cx = r;
+                        let cy = r;
+                        for (px, py, pixel) in square.enumerate_pixels_mut() {
+                            let dx = px as f32 + 0.5 - cx;
+                            let dy = py as f32 + 0.5 - cy;
+                            if dx * dx + dy * dy > r * r {
+                                *pixel = image::Rgba([0u8, 0, 0, 0]);
                             }
+                        }
+
+                        let dyn_img = image::DynamicImage::ImageRgba8(square);
+                        let protocol = picker.new_resize_protocol(dyn_img);
+                        if let Ok(mut guard) = cover.lock() {
+                            *guard = Some(protocol);
+                        }
+                    }
                 });
             }
         }
