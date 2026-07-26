@@ -7,7 +7,7 @@ use ratatui::{
     widgets::Widget,
 };
 
-use crate::utils::gradient_color;
+use crate::utils::GradientPreset;
 
 pub struct GradientLineGauge<'a> {
     ratio: f64,
@@ -15,18 +15,18 @@ pub struct GradientLineGauge<'a> {
     filled_symbol: String,
     unfilled_symbol: String,
     unfilled_style: Style,
-    gradient_preset: String,
+    gradient_preset: GradientPreset,
 }
 
 impl<'a> GradientLineGauge<'a> {
-    pub fn new(preset: &str) -> Self {
+    pub fn new(preset: GradientPreset) -> Self {
         Self {
             ratio: 0.0,
             label: None,
             filled_symbol: symbols::line::THICK_HORIZONTAL.to_string(),
             unfilled_symbol: symbols::line::THICK_HORIZONTAL.to_string(),
             unfilled_style: Style::default().fg(Color::DarkGray),
-            gradient_preset: preset.to_string(),
+            gradient_preset: preset,
         }
     }
 
@@ -82,7 +82,7 @@ impl Widget for GradientLineGauge<'_> {
                 } else {
                     i as f64 / filled_len as f64
                 };
-                let [r, g, b] = gradient_color(&self.gradient_preset, t as f32);
+                let [r, g, b] = self.gradient_preset.color(t as f32);
                 let style = Style::default().fg(Color::Rgb(r, g, b));
                 (self.filled_symbol.as_str(), style)
             } else {

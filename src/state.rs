@@ -149,7 +149,6 @@ pub struct SearchState {
     pub input: TextInput,
     pub filter_queue_only: bool,
     pub unfiltered_songs: Option<Vec<Arc<ncm_api::SongInfo>>>,
-    pub unfiltered_songs_lower: Option<Vec<(String, String)>>,
 }
 
 pub struct State {
@@ -160,7 +159,6 @@ pub struct State {
     pub navigation: NavigationState,
     pub command_panel: CommandPanel,
     pub offline: bool,
-    pub local_music: ContentState,
     pub tick: u64,
     pub last_tick: std::time::Instant,
     pub toast_msg: String,
@@ -219,7 +217,21 @@ impl App {
         let mut command_panel = CommandPanel::new();
         command_panel.levels = vec![commands];
 
-        let api = Arc::new(ncm_api::NcmClient::new()?);
+        let (ncm_proxy, yt_proxy) = if config.proxy.is_empty() {
+            (String::new(), String::new())
+        } else {
+            match config.proxy_target {
+                crate::config::ProxyTarget::Ncm => (config.proxy.clone(), String::new()),
+                crate::config::ProxyTarget::Yt => (String::new(), config.proxy.clone()),
+                crate::config::ProxyTarget::Both => (config.proxy.clone(), config.proxy.clone()),
+            }
+        };
+
+        let api = if ncm_proxy.is_empty() {
+            Arc::new(ncm_api::NcmClient::new()?)
+        } else {
+            Arc::new(ncm_api::NcmClient::builder().proxy(&ncm_proxy).build()?)
+        };
 
         let nav_config = config.navigation.clone();
         let quality = ncm_api::SongQuality::from_level(&config.quality)
@@ -239,7 +251,7 @@ impl App {
         let base_dir = dirs::cache_dir()
             .unwrap_or_else(|| std::path::PathBuf::from("."))
             .join("pigma");
-        let proxy = config.proxy.clone();
+        let proxy = yt_proxy;
 
         let cache =
             crate::cache::CacheManager::new(cache_dir, base_dir, config.cache_template.clone());
@@ -276,7 +288,6 @@ impl App {
                 },
                 command_panel,
                 offline: false,
-                local_music: ContentState::Empty,
                 tick: 0,
                 last_tick: std::time::Instant::now(),
                 toast_msg: String::new(),

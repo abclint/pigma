@@ -22,7 +22,6 @@ impl App {
         nav.search.input = crate::text_input::TextInput::new();
         nav.search.filter_queue_only = false;
         nav.search.unfiltered_songs = None;
-        nav.search.unfiltered_songs_lower = None;
 
         nav.push_breadcrumb();
 
@@ -53,7 +52,6 @@ impl App {
             if let Some(songs) = nav.search.unfiltered_songs.take() {
                 self.playback.set_queue_songs(songs);
             }
-            nav.search.unfiltered_songs_lower = None;
         } else {
             nav.pop_breadcrumb();
         }

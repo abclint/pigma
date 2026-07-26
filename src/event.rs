@@ -31,7 +31,6 @@ pub enum SplashEvent {
         progress: f64,
         log: Option<SplashLogEntry>,
     },
-    LocalMusicLoaded(Vec<SongInfo>),
     SetOffline,
 }
 
@@ -63,6 +62,8 @@ pub enum PlaybackEvent {
     HeartbeatSong(SongInfo),
     HeartbeatFallback,
     SetPlaylistId(u64),
+    LikeSong(u64),
+    DislikeSong(u64),
 }
 
 #[derive(Clone, Debug)]

@@ -13,7 +13,8 @@ use crate::playback::types::PlayMode;
 use crate::state::PlaybackState;
 use crate::ui::gradient_line_gauge::GradientLineGauge;
 use crate::ui::spinner::Spinner;
-use crate::utils::format_duration;
+use crate::utils::GradientPreset;
+use crate::utils::format_duration_into;
 
 pub fn mode_icon(mode: &PlayMode) -> (&str, &str) {
     match mode {
@@ -95,8 +96,10 @@ pub fn draw_spinner(f: &mut Frame, tick: u64, colors: &Theme, area: Rect) {
 pub fn draw_current_time(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
     if let Some(song) = &player.current_song {
         let cur_ms = (player.progress * song.duration as f64) as u64;
+        let mut buf = String::with_capacity(8);
+        format_duration_into(cur_ms, &mut buf);
         f.render_widget(
-            Paragraph::new(format_duration(cur_ms)).style(Style::default().fg(colors.text)),
+            Paragraph::new(buf).style(Style::default().fg(colors.text)),
             area,
         );
     }
@@ -104,8 +107,10 @@ pub fn draw_current_time(f: &mut Frame, player: &PlaybackState, colors: &Theme, 
 
 pub fn draw_total_time(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
     if let Some(song) = &player.current_song {
+        let mut buf = String::with_capacity(8);
+        format_duration_into(song.duration, &mut buf);
         f.render_widget(
-            Paragraph::new(format_duration(song.duration)).style(Style::default().fg(colors.text)),
+            Paragraph::new(buf).style(Style::default().fg(colors.text)),
             area,
         );
     }
@@ -129,12 +134,13 @@ pub fn draw_gauge_bar(
     };
 
     if pb.gradient_enabled {
-        let gauge = GradientLineGauge::new(&pb.gradient_preset)
-            .ratio(player.progress.clamp(0.0, 1.0))
-            .label(Line::from(""))
-            .filled_symbol(&pb.filled_symbol)
-            .unfilled_symbol(&pb.unfilled_symbol)
-            .unfilled_style(Style::default().fg(colors.field_color(unfilled_color)));
+        let gauge =
+            GradientLineGauge::new(GradientPreset::from_str_or_rainbow(&pb.gradient_preset))
+                .ratio(player.progress.clamp(0.0, 1.0))
+                .label(Line::from(""))
+                .filled_symbol(&pb.filled_symbol)
+                .unfilled_symbol(&pb.unfilled_symbol)
+                .unfilled_style(Style::default().fg(colors.field_color(unfilled_color)));
         f.render_widget(gauge, area);
     } else {
         let gauge = LineGauge::default()
@@ -159,11 +165,11 @@ pub fn draw_gauge_with_label(
     };
 
     let cur_ms = (player.progress * song.duration as f64) as u64;
-    let time_str = format!(
-        "{} / {}",
-        format_duration(cur_ms),
-        format_duration(song.duration)
-    );
+    let mut time_buf = String::with_capacity(16);
+    format_duration_into(cur_ms, &mut time_buf);
+    use std::fmt::Write;
+    let _ = write!(time_buf, " / ");
+    format_duration_into(song.duration, &mut time_buf);
 
     let unfilled_color = if player.cached {
         pb.unfilled_color_cached.as_str()
@@ -172,15 +178,16 @@ pub fn draw_gauge_with_label(
     };
 
     if pb.gradient_enabled {
-        let gauge = GradientLineGauge::new(&pb.gradient_preset)
-            .ratio(player.progress.clamp(0.0, 1.0))
-            .label(Line::from(Span::styled(
-                time_str,
-                Style::default().fg(colors.text),
-            )))
-            .filled_symbol(&pb.filled_symbol)
-            .unfilled_symbol(&pb.unfilled_symbol)
-            .unfilled_style(Style::default().fg(colors.field_color(unfilled_color)));
+        let gauge =
+            GradientLineGauge::new(GradientPreset::from_str_or_rainbow(&pb.gradient_preset))
+                .ratio(player.progress.clamp(0.0, 1.0))
+                .label(Line::from(Span::styled(
+                    time_buf,
+                    Style::default().fg(colors.text),
+                )))
+                .filled_symbol(&pb.filled_symbol)
+                .unfilled_symbol(&pb.unfilled_symbol)
+                .unfilled_style(Style::default().fg(colors.field_color(unfilled_color)));
         f.render_widget(gauge, area);
     } else {
         let gauge = LineGauge::default()
@@ -189,7 +196,7 @@ pub fn draw_gauge_with_label(
             .filled_style(Style::default().fg(colors.field_color(&pb.filled_color)))
             .unfilled_style(Style::default().fg(colors.field_color(unfilled_color)))
             .ratio(player.progress.clamp(0.0, 1.0))
-            .label(Span::styled(time_str, Style::default().fg(colors.text)));
+            .label(Span::styled(time_buf, Style::default().fg(colors.text)));
         f.render_widget(gauge, area);
     }
 }

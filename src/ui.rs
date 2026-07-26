@@ -31,6 +31,7 @@ use crate::{
     config::{BorderConfig, Theme},
     layout,
     state::{App, Page},
+    utils::GradientPreset,
 };
 
 pub struct BlockStyle<'a> {
@@ -204,7 +205,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                         f,
                         &app.playback.state,
                         &bs,
-                        &app.config.lyric_gradient,
+                        GradientPreset::from_str_or_rainbow(&app.config.lyric_gradient),
                         &app.config.titles.lyrics,
                         lay.content,
                     );
@@ -309,7 +310,13 @@ pub(crate) fn create_block<'a>(
         .corner_color(corner)
         .corner_sizes(2, 1)
         .follow_corner_color(style.border.follow_corner_color)
-        .border_gradient(style.border.border_gradient.clone())
+        .border_gradient(
+            style
+                .border
+                .border_gradient
+                .as_deref()
+                .map(GradientPreset::from_str_or_rainbow),
+        )
         .border_gradient_speed(style.border.border_gradient_speed)
         .tick(style.tick)
 }

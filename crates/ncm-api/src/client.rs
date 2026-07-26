@@ -524,7 +524,8 @@ impl NcmClient {
             .await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        let ids: Vec<u64> = parse_song_id_list(&value).map_err(|e| NcmError::parse(e, &value))?;
+        let mut ids: Vec<u64> = parse_song_id_list(&value).map_err(|e| NcmError::parse(e, &value))?;
+        ids.reverse();
         if ids.is_empty() {
             return Ok(Vec::new());
         }
@@ -956,9 +957,9 @@ impl NcmClient {
             ("alg", "itembased"),
             ("trackId", id_str.as_str()),
             ("like", like_str),
-            ("time", "25"),
+            ("time", "3"),
         ];
-        let result = self.request_weapi("/weapi/radio/like", &params).await?;
+        let result = self.request_weapi("/api/radio/like", &params).await?;
         let value: Value = serde_json::from_str(&result)?;
         parse_msg(&value).map_err(|e| NcmError::parse(e, &value))
     }
@@ -974,6 +975,26 @@ impl NcmClient {
             .await?;
         let value: Value = serde_json::from_str(&result)?;
         parse_msg(&value).map_err(|e| NcmError::parse(e, &value))
+    }
+
+    /// 每日推荐歌曲标记为不感兴趣
+    ///
+    /// * `song_id` — 歌曲 ID
+    pub async fn recommend_song_dislike(&self, song_id: u64) -> Result<SongInfo, NcmError> {
+        let id_str = song_id.to_string();
+        let params = vec![
+            ("resId", id_str.as_str()),
+            ("resType", "4"),
+            ("sceneType", "1"),
+        ];
+        let result = self
+            .request_weapi("/api/v2/discovery/recommend/dislike", &params)
+            .await?;
+        let value: Value = serde_json::from_str(&result)?;
+        let data = value
+            .get("data")
+            .ok_or_else(|| NcmError::parse("missing data", &value))?;
+        parse_song_info(data, SongContext::Rmds).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 收藏/取消收藏歌单

@@ -1,3 +1,6 @@
+use std::fmt;
+use std::str::FromStr;
+
 /// 歌词高亮渐变预设
 ///
 /// 复刻 colorgrad 预设的真实算法
@@ -6,41 +9,99 @@
 /// - rainbow：Cubehelix 逐点公式
 /// - turbo：5 次多项式（colorgrad 原实现）
 /// - spectral / viridis：精确 hex 色站 + RGB 线性插值（BlendMode::Rgb）
-///
-/// 未知名称回退到 warm。
-pub fn gradient_color(preset: &str, t: f32) -> [u8; 3] {
-    let t = t.clamp(0.0, 1.0);
-    match preset.to_ascii_lowercase().as_str() {
-        "cubehelix" => cubehelix_color(-100.0, 0.5, 0.0, -240.0, 0.5, 1.0, t),
-        "rainbow" => {
-            let ts = (t - 0.5).abs();
-            cubehelix_color(
-                360.0 * t - 100.0,
-                1.5 - 1.5 * ts,
-                0.8 - 0.9 * ts,
-                360.0 * t - 100.0,
-                1.5 - 1.5 * ts,
-                0.8 - 0.9 * ts,
-                t,
-            )
-        }
-        "turbo" => turbo_color(t),
-        "spectral" => interp_stops(
-            &[
-                0x9e0142, 0xd53e4f, 0xf46d43, 0xfdae61, 0xfee08b, 0xffffbf, 0xe6f598, 0xabdda4,
-                0x66c2a5, 0x3288bd, 0x5e4fa2,
-            ],
-            t,
-        ),
-        "viridis" => interp_stops(
-            &[
-                0x440154, 0x482777, 0x3f4a8a, 0x31678e, 0x26838f, 0x1f9d8a, 0x6cce5a, 0xb6de2b,
-                0xfee825,
-            ],
-            t,
-        ),
-        _ => cubehelix_color(-100.0, 0.75, 0.35, 80.0, 1.5, 0.8, t), // warm（默认）
+///   未知名称回退到 rainbow
+///   Gradient preset enum — avoids per-call string comparison in hot render paths.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum GradientPreset {
+    #[default]
+    Rainbow,
+    Warm,
+    Cubehelix,
+    Turbo,
+    Spectral,
+    Viridis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GradientPresetError(String);
+
+impl fmt::Display for GradientPresetError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "unknown gradient preset: {}", self.0)
     }
+}
+
+impl std::error::Error for GradientPresetError {}
+
+impl FromStr for GradientPreset {
+    type Err = GradientPresetError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.eq_ignore_ascii_case("warm") {
+            Ok(Self::Warm)
+        } else if s.eq_ignore_ascii_case("cubehelix") {
+            Ok(Self::Cubehelix)
+        } else if s.eq_ignore_ascii_case("rainbow") {
+            Ok(Self::Rainbow)
+        } else if s.eq_ignore_ascii_case("turbo") {
+            Ok(Self::Turbo)
+        } else if s.eq_ignore_ascii_case("spectral") {
+            Ok(Self::Spectral)
+        } else if s.eq_ignore_ascii_case("viridis") {
+            Ok(Self::Viridis)
+        } else {
+            Err(GradientPresetError(s.to_owned()))
+        }
+    }
+}
+
+impl GradientPreset {
+    /// Parse with fallback to `Rainbow` for unrecognized names.
+    pub fn from_str_or_rainbow(s: &str) -> Self {
+        s.parse().unwrap_or_default()
+    }
+
+    pub fn color(self, t: f32) -> [u8; 3] {
+        let t = t.clamp(0.0, 1.0);
+        match self {
+            Self::Cubehelix => cubehelix_color(-100.0, 0.5, 0.0, -240.0, 0.5, 1.0, t),
+            Self::Rainbow => {
+                let ts = (t - 0.5).abs();
+                cubehelix_color(
+                    360.0 * t - 100.0,
+                    1.5 - 1.5 * ts,
+                    0.8 - 0.9 * ts,
+                    360.0 * t - 100.0,
+                    1.5 - 1.5 * ts,
+                    0.8 - 0.9 * ts,
+                    t,
+                )
+            }
+            Self::Turbo => turbo_color(t),
+            Self::Spectral => interp_stops(
+                &[
+                    0x9e0142, 0xd53e4f, 0xf46d43, 0xfdae61, 0xfee08b, 0xffffbf, 0xe6f598, 0xabdda4,
+                    0x66c2a5, 0x3288bd, 0x5e4fa2,
+                ],
+                t,
+            ),
+            Self::Viridis => interp_stops(
+                &[
+                    0x440154, 0x482777, 0x3f4a8a, 0x31678e, 0x26838f, 0x1f9d8a, 0x6cce5a, 0xb6de2b,
+                    0xfee825,
+                ],
+                t,
+            ),
+            Self::Warm => cubehelix_color(-100.0, 0.75, 0.35, 80.0, 1.5, 0.8, t),
+        }
+    }
+}
+
+// Keep the string-based function for callers that receive runtime strings
+// (e.g. styled_text markup parser). Hot-path callers should use
+// GradientPreset::from_str_or_rainbow + .color() directly.
+pub fn gradient_color(preset: &str, t: f32) -> [u8; 3] {
+    GradientPreset::from_str_or_rainbow(preset).color(t)
 }
 
 fn cubehelix_color(h0: f32, s0: f32, l0: f32, h1: f32, s1: f32, l1: f32, t: f32) -> [u8; 3] {
@@ -100,31 +161,70 @@ mod tests {
 
     #[test]
     fn gradient_warm_bounds() {
-        assert_eq!(gradient_color("warm", 0.0), [110, 64, 170]);
-        let end = gradient_color("warm", 1.0);
+        assert_eq!(GradientPreset::Warm.color(0.0), [110, 64, 170]);
+        let end = GradientPreset::Warm.color(1.0);
         assert_eq!(end, [175, 240, 91]);
     }
 
     #[test]
     fn gradient_unknown_fallback() {
-        assert_eq!(gradient_color("nope", 1.0), gradient_color("warm", 1.0));
+        assert_eq!(
+            GradientPreset::from_str_or_rainbow("nope").color(1.0),
+            GradientPreset::Rainbow.color(1.0)
+        );
     }
 
     #[test]
     fn gradient_rainbow_matches_colorgrad() {
-        assert_eq!(gradient_color("rainbow", 0.25), [255, 94, 99]);
-        assert_eq!(gradient_color("rainbow", 0.75), [26, 199, 194]);
+        assert_eq!(GradientPreset::Rainbow.color(0.25), [255, 94, 99]);
+        assert_eq!(GradientPreset::Rainbow.color(0.75), [26, 199, 194]);
     }
 
     #[test]
     fn gradient_turbo_bounds() {
-        assert_eq!(gradient_color("turbo", 0.0), [35, 23, 27]);
-        assert_eq!(gradient_color("turbo", 1.0), [144, 12, 0]);
+        assert_eq!(GradientPreset::Turbo.color(0.0), [35, 23, 27]);
+        assert_eq!(GradientPreset::Turbo.color(1.0), [144, 12, 0]);
     }
 
     #[test]
     fn gradient_viridis_bounds() {
-        assert_eq!(gradient_color("viridis", 0.0), [68, 1, 84]);
-        assert_eq!(gradient_color("viridis", 1.0), [182, 222, 43]);
+        assert_eq!(GradientPreset::Viridis.color(0.0), [68, 1, 84]);
+        assert_eq!(GradientPreset::Viridis.color(1.0), [182, 222, 43]);
+    }
+
+    #[test]
+    fn from_str_case_insensitive() {
+        assert_eq!(
+            "Warm".parse::<GradientPreset>().unwrap(),
+            GradientPreset::Warm
+        );
+        assert_eq!(
+            "TURBO".parse::<GradientPreset>().unwrap(),
+            GradientPreset::Turbo
+        );
+        assert_eq!(
+            "Spectral".parse::<GradientPreset>().unwrap(),
+            GradientPreset::Spectral
+        );
+    }
+
+    #[test]
+    fn string_fn_matches_enum() {
+        for name in &[
+            "warm",
+            "cubehelix",
+            "rainbow",
+            "turbo",
+            "spectral",
+            "viridis",
+            "nope",
+        ] {
+            for t in [0.0, 0.25, 0.5, 0.75, 1.0] {
+                assert_eq!(
+                    gradient_color(name, t),
+                    GradientPreset::from_str_or_rainbow(name).color(t)
+                );
+            }
+        }
     }
 }

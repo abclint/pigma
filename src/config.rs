@@ -53,6 +53,9 @@ pub struct Config {
     /// YouTube fallback 代理地址（留空则不使用代理）。
     #[serde(default = "default_proxy")]
     pub proxy: String,
+    /// 代理目标：`ncm` 代理 NCM API（海外用户），`yt` 代理 YouTube（默认，国内用户）。
+    #[serde(default = "default_proxy_target")]
+    pub proxy_target: ProxyTarget,
     /// 搜索结果数量上限。
     #[serde(default = "default_search_limit")]
     pub search_limit: u16,
@@ -82,6 +85,18 @@ fn default_proxy() -> String {
     "http://127.0.0.1:7890".into()
 }
 
+fn default_proxy_target() -> ProxyTarget {
+    ProxyTarget::Yt
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProxyTarget {
+    Ncm,
+    Yt,
+    Both,
+}
+
 fn default_search_limit() -> u16 {
     100
 }
@@ -104,6 +119,7 @@ impl Default for Config {
             quality: default_quality(),
             cache_template: default_cache_template(),
             proxy: default_proxy(),
+            proxy_target: default_proxy_target(),
             search_limit: default_search_limit(),
         }
     }

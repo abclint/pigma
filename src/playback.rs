@@ -37,7 +37,6 @@ pub struct PlaybackEngine {
     pub(super) api: Arc<NcmClient>,
     playlist_id: Option<u64>,
     consecutive_errors: u32,
-    pending_report: Option<(u64, u64)>,
 }
 
 impl PlaybackEngine {
@@ -60,7 +59,6 @@ impl PlaybackEngine {
             api,
             playlist_id: None,
             consecutive_errors: 0,
-            pending_report: None,
         };
         this.restore_session();
         this
@@ -86,22 +84,6 @@ impl PlaybackEngine {
         });
         self.handle_finished();
         info
-    }
-
-    fn snapshot_report(&mut self) {
-        if let Some((song_id, duration, progress)) = self.state.current_song.as_ref().map(|s| {
-            let progress = self.state.progress;
-            (s.id, s.duration, progress)
-        }) {
-            let time_ms = (duration as f64 * progress) as u64;
-            if time_ms > 0 {
-                self.pending_report = Some((song_id, time_ms));
-            }
-        }
-    }
-
-    pub fn take_pending_report(&mut self) -> Option<(u64, u64)> {
-        self.pending_report.take()
     }
 
     pub fn song_at(&self, index: usize) -> Option<&Arc<SongInfo>> {
@@ -146,7 +128,7 @@ impl PlaybackEngine {
         if songs.is_empty() || index >= songs.len() {
             return;
         }
-        self.snapshot_report();
+
         self.controller.stop();
         let songs: Vec<Arc<SongInfo>> = songs.into_iter().map(Arc::new).collect();
         self.queue = PlaylistQueue::from_songs(songs, index);
@@ -159,7 +141,7 @@ impl PlaybackEngine {
         if songs.is_empty() || index >= songs.len() {
             return;
         }
-        self.snapshot_report();
+
         self.controller.stop();
         let offset = self.queue.append(songs);
         self.queue.current_index = Some(offset + index);
@@ -172,7 +154,7 @@ impl PlaybackEngine {
         if index >= self.queue.len() {
             return;
         }
-        self.snapshot_report();
+
         self.controller.stop();
         self.queue.advance_to(index);
         self.strategy =
@@ -184,8 +166,6 @@ impl PlaybackEngine {
         if self.queue.is_empty() {
             return;
         }
-
-        self.snapshot_report();
 
         if matches!(self.state.mode, PlayMode::Heartbeat { .. }) {
             self.next_heartbeat();
@@ -208,8 +188,6 @@ impl PlaybackEngine {
             return;
         }
 
-        self.snapshot_report();
-
         if let Some(prev_song) = self.queue.pop_history()
             && let Some(pos) = self.queue.find_song_index(prev_song.id)
         {
@@ -226,7 +204,6 @@ impl PlaybackEngine {
 
     pub fn toggle_pause(&mut self) {
         if !self.state.playing && self.queue.current_index.is_some() {
-            self.snapshot_report();
             let seek_time = if self.state.progress > 0.0 {
                 self.queue.current_song().and_then(|s| {
                     let secs = self.state.progress * (s.duration as f64 / 1000.0);
@@ -247,7 +224,6 @@ impl PlaybackEngine {
     }
 
     pub fn stop(&mut self) {
-        self.snapshot_report();
         self.controller.stop();
         self.queue.current_index = None;
         self.state.playing = false;
@@ -257,7 +233,6 @@ impl PlaybackEngine {
     }
 
     pub fn clear_queue(&mut self) {
-        self.snapshot_report();
         self.controller.stop();
         self.queue = PlaylistQueue::new();
         self.strategy = mode::create_strategy(&self.state.mode, 0, None);
@@ -349,7 +324,6 @@ impl PlaybackEngine {
     }
 
     pub fn on_playback_error(&mut self, err: String) {
-        self.snapshot_report();
         //todo 这种实现可能存在问题，重写
         // buffer underrun/overrun is transient — rodio recovers automatically
         if err.contains("buffer underrun") || err.contains("overrun") {

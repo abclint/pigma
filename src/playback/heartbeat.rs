@@ -70,7 +70,6 @@ impl PlaybackEngine {
     }
 
     pub fn play_heartbeat_song(&mut self, song: SongInfo) {
-        self.snapshot_report();
         self.controller.stop();
         self.queue.push_to_history();
 

@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use ncm_api::{SingerInfo, SongInfo, SongList, TopList};
 use ratatui::{
     Frame,
@@ -15,49 +17,49 @@ use crate::state::{ContentState, TableMode};
 
 /// Look up a field value for a table row by its column field name.
 /// Returns `None` for unknown fields (rendered as "—").
-fn song_field(song: &SongInfo, field: &str) -> Option<String> {
+fn song_field<'a>(song: &'a SongInfo, field: &str) -> Option<Cow<'a, str>> {
     match field {
-        "name" => Some(song.name.clone()),
-        "singer" => Some(song.singer.clone()),
-        "album" => Some(song.album.clone()),
-        "duration" => Some(crate::utils::format_duration(song.duration)),
-        "id" => Some(song.id.to_string()),
+        "name" => Some(Cow::Borrowed(&song.name)),
+        "singer" => Some(Cow::Borrowed(&song.singer)),
+        "album" => Some(Cow::Borrowed(&song.album)),
+        "duration" => Some(Cow::Owned(crate::utils::format_duration(song.duration))),
+        "id" => Some(Cow::Owned(song.id.to_string())),
         _ => None,
     }
 }
 
-fn songlist_field(list: &SongList, field: &str) -> Option<String> {
+fn songlist_field<'a>(list: &'a SongList, field: &str) -> Option<Cow<'a, str>> {
     match field {
-        "name" => Some(list.name.clone()),
-        "author" => Some(list.author.clone()),
-        "id" => Some(list.id.to_string()),
+        "name" => Some(Cow::Borrowed(&list.name)),
+        "author" => Some(Cow::Borrowed(&list.author)),
+        "id" => Some(Cow::Owned(list.id.to_string())),
         _ => None,
     }
 }
 
-fn toplist_field(list: &TopList, field: &str) -> Option<String> {
+fn toplist_field<'a>(list: &'a TopList, field: &str) -> Option<Cow<'a, str>> {
     match field {
-        "name" => Some(list.name.clone()),
-        "description" => Some(list.description.clone()),
-        "id" => Some(list.id.to_string()),
+        "name" => Some(Cow::Borrowed(&list.name)),
+        "description" => Some(Cow::Borrowed(&list.description)),
+        "id" => Some(Cow::Owned(list.id.to_string())),
         _ => None,
     }
 }
 
-fn singer_field(singer: &SingerInfo, field: &str) -> Option<String> {
+fn singer_field<'a>(singer: &'a SingerInfo, field: &str) -> Option<Cow<'a, str>> {
     match field {
-        "name" => Some(singer.name.clone()),
-        "id" => Some(singer.id.to_string()),
+        "name" => Some(Cow::Borrowed(&singer.name)),
+        "id" => Some(Cow::Owned(singer.id.to_string())),
         _ => None,
     }
 }
 
 /// Build table rows directly from a slice of items, avoiding the intermediate
 /// `HashMap` allocation that the old `compute_rows` path performed per row.
-fn build_rows<I>(
-    items: &[I],
+fn build_rows<'a, I>(
+    items: &'a [I],
     columns: &[ColumnDef],
-    lookup: impl Fn(&I, &str) -> Option<String>,
+    lookup: impl Fn(&'a I, &str) -> Option<Cow<'a, str>>,
 ) -> Vec<Vec<String>> {
     let mut warned = std::collections::HashSet::new();
     items
@@ -66,13 +68,15 @@ fn build_rows<I>(
             columns
                 .iter()
                 .map(|col| {
-                    lookup(item, &col.field).unwrap_or_else(|| {
-                        if !warned.contains(&col.field) {
-                            log::warn!("Missing field: \"{}\" — showing \"—\"", col.field);
-                            warned.insert(col.field.clone());
-                        }
-                        "—".to_string()
-                    })
+                    lookup(item, &col.field)
+                        .map(Cow::into_owned)
+                        .unwrap_or_else(|| {
+                            if !warned.contains(&col.field) {
+                                log::warn!("Missing field: \"{}\" — showing \"—\"", col.field);
+                                warned.insert(col.field.clone());
+                            }
+                            "—".to_string()
+                        })
                 })
                 .collect()
         })
@@ -86,7 +90,7 @@ fn compute_rows(content: &ContentState, columns: &[ColumnDef]) -> Vec<Vec<String
         ContentState::TopLists(lists) => build_rows(lists, columns, toplist_field),
         ContentState::HotSearch(keywords) => build_rows(keywords, columns, |kw, field| {
             if field == "keyword" {
-                Some(kw.clone())
+                Some(Cow::Borrowed(kw.as_str()))
             } else {
                 None
             }

@@ -2,7 +2,7 @@ pub mod gradient;
 pub mod time;
 pub mod youtube;
 
-pub use gradient::gradient_color;
+pub use gradient::{GradientPreset, gradient_color};
 pub use time::{
     clock_time, format_duration, format_duration_into, local_timestamp, parse_duration_secs,
 };

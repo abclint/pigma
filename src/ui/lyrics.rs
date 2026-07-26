@@ -10,6 +10,7 @@ use super::BlockStyle;
 use super::create_block;
 use crate::config::Theme;
 use crate::state::PlaybackState;
+use crate::utils::GradientPreset;
 
 thread_local! {
     static LAST_CUR: Cell<usize> = const { Cell::new(0) };
@@ -43,7 +44,7 @@ pub fn draw(
     f: &mut Frame,
     player: &PlaybackState,
     bs: &BlockStyle<'_>,
-    gradient: &str,
+    gradient: GradientPreset,
     title: &str,
     area: Rect,
 ) {
@@ -136,31 +137,31 @@ pub fn draw(
     f.render_widget(Paragraph::new(lines), inner);
 }
 
-fn render_current_line(
-    text: &str,
+fn render_current_line<'a>(
+    text: &'a str,
     cur_ms: f64,
     line_ms: f64,
     next_ms: Option<f64>,
     colors: &Theme,
-    gradient: &str,
-) -> Line<'static> {
+    gradient: GradientPreset,
+) -> Line<'a> {
     let seg_dur = next_ms.map(|n| (n - line_ms).max(1.0)).unwrap_or(4000.0);
     let seg_progress = ((cur_ms - line_ms) / seg_dur).clamp(0.0, 1.0);
-    let split_at = (text.chars().count() as f64 * seg_progress).floor() as usize;
+    let total = text.chars().count();
+    let split_at = (total as f64 * seg_progress).floor() as usize;
 
-    let chars: Vec<char> = text.chars().collect();
-    let total = chars.len();
-
-    let mut spans: Vec<Span> = Vec::with_capacity(total);
-
-    for (j, &ch) in chars.iter().enumerate() {
+    let mut spans: Vec<Span<'a>> = Vec::with_capacity(total);
+    for (byte_start, ch) in text.char_indices() {
+        let j = spans.len();
+        let byte_end = byte_start + ch.len_utf8();
+        let ch_str = &text[byte_start..byte_end];
         let s = if j < split_at {
             let t = j as f64 / split_at.max(1) as f64;
-            let [r, g, b] = crate::utils::gradient_color(gradient, t as f32);
-            Span::styled(ch.to_string(), Style::default().fg(Color::Rgb(r, g, b)))
+            let [r, g, b] = gradient.color(t as f32);
+            Span::styled(ch_str, Style::default().fg(Color::Rgb(r, g, b)))
         } else if j == split_at {
             Span::styled(
-                ch.to_string(),
+                ch_str,
                 Style::default()
                     .fg(Color::White)
                     .bg(colors.accent)
@@ -168,8 +169,8 @@ fn render_current_line(
             )
         } else {
             let t = (j - split_at) as f64 / (total - split_at).max(1) as f64;
-            let [r, g, b] = crate::utils::gradient_color(gradient, 1.0 - t as f32);
-            Span::styled(ch.to_string(), Style::default().fg(Color::Rgb(r, g, b)))
+            let [r, g, b] = gradient.color(1.0 - t as f32);
+            Span::styled(ch_str, Style::default().fg(Color::Rgb(r, g, b)))
         };
         spans.push(s);
     }
