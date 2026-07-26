@@ -1,5 +1,5 @@
-use crate::event::{CommandEvent, NavigationEvent};
-use crate::state::{App, Page, TableMode};
+use crate::event::{CommandEvent, NavigationEvent, PlaybackEvent};
+use crate::state::{App, ContentState, Page, TableMode};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEventKind};
 
 use super::content::{
@@ -18,19 +18,14 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
         KeyCode::Char('q') => app.state.events.send(crate::event::AppEvent::Quit),
         KeyCode::Tab => navigate_nav_down(app),
         KeyCode::BackTab => navigate_nav_up(app),
-        KeyCode::Up => {
+        KeyCode::Up | KeyCode::Char('k' | 'K') => {
             if app.state.navigation.page == Page::Playlist {
                 playlist_select_prev(app);
             } else {
                 content_select_prev(app);
             }
         }
-        KeyCode::Down => {
-            log::info!(
-                "KEY_DOWN page={:?} selected={}",
-                app.state.navigation.page,
-                app.state.navigation.playlist_selected
-            );
+        KeyCode::Down | KeyCode::Char('j' | 'J') => {
             if app.state.navigation.page == Page::Playlist {
                 playlist_select_next(app);
             } else {
@@ -108,12 +103,6 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
                 app.state.navigation.search.filter_queue_only = true;
                 let songs = app.playback.queue_songs();
                 app.state.navigation.search.unfiltered_songs = Some(songs.to_vec());
-                app.state.navigation.search.unfiltered_songs_lower = Some(
-                    songs
-                        .iter()
-                        .map(|s| (s.name.to_lowercase(), s.singer.to_lowercase()))
-                        .collect(),
-                );
                 app.state.navigation.search.active = true;
                 app.state.navigation.search.input = crate::text_input::TextInput::new();
             } else {
@@ -137,9 +126,28 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
         KeyCode::Char('m') => {
             app.playback.cycle_mode();
         }
+        KeyCode::Char('s' | 'S') => {
+            if let ContentState::Songs(songs) = app.state.navigation.content.as_ref() {
+                let sel = app.state.navigation.content_selected;
+                if let Some(song) = songs.get(sel) {
+                    app.state.events.send(PlaybackEvent::LikeSong(song.id));
+                    app.toast(format!("♥  {}", song.name));
+                }
+            }
+        }
+        KeyCode::Char('d' | 'D') => {
+            if is_daily_recommend(app)
+                && let ContentState::Songs(songs) = app.state.navigation.content.as_ref()
+            {
+                let sel = app.state.navigation.content_selected;
+                if let Some(song) = songs.get(sel) {
+                    app.state.events.send(PlaybackEvent::DislikeSong(song.id));
+                    app.toast(format!("✕  {}", song.name));
+                }
+            }
+        }
         _ => {}
     }
-    app.report_pending_play();
     Ok(())
 }
 
@@ -168,5 +176,24 @@ pub(super) fn handle_main_mouse(app: &mut App, kind: MouseEventKind) {
         }
         _ => {}
     }
-    app.report_pending_play();
+}
+
+fn is_daily_recommend(app: &App) -> bool {
+    app.state
+        .navigation
+        .nav
+        .sections
+        .get(app.state.navigation.nav.focus_section)
+        .and_then(|s| {
+            let idx = app
+                .state
+                .navigation
+                .nav
+                .section_states
+                .get(app.state.navigation.nav.focus_section)?
+                .selected()?;
+            s.items.get(idx)
+        })
+        .and_then(|item| item.api.as_deref())
+        == Some("recommend_songs")
 }

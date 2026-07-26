@@ -28,8 +28,13 @@ cache_dir = "downloads"
 # 缓存文件命名模板, 可用变量: {id}, {name}, {singer}, {album}
 cache_template = "{name}-{singer}"
 
-# 代理地址 (用于网络请求),fallback音源到youtube会用
+# 代理地址, 支持 http:// https:// socks5://
 proxy = "http://127.0.0.1:7890"
+
+# 代理目标: "yt" (默认, 代理 YouTube), "ncm" (代理网易云), "both" (都代理)
+# 海外用户: proxy_target = "ncm"  (NCM 走代理, YouTube 直连)
+# 国内用户: proxy_target = "yt"   (NCM 直连, YouTube 走代理)
+proxy_target = "yt"
 
 # =============================================================================
 # 边框配置

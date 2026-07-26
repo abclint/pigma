@@ -2735,7 +2735,7 @@ dependencies = [
 
 [[package]]
 name = "pigma"
-version = "0.1.2"
+version = "0.1.4"
 dependencies = [
  "color-eyre",
  "colorgrad",

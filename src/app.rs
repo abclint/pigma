@@ -68,10 +68,12 @@ impl App {
         {
             self.state.navigation.nav.section_states[1].select(Some(i));
         }
-        self.state
-            .navigation
-            .set_content(self.state.local_music.clone());
         self.state.navigation.nav.subtitle = Some("本地音乐".into());
+        let sender = self.state.events.sender();
+        send_event(
+            &sender,
+            NavigationEvent::NavSelect("__local_music__".into()).into(),
+        );
         self.state.navigation.content_selected = 0;
     }
 
@@ -118,9 +120,6 @@ impl App {
     fn handle_splash_event(&mut self, event: SplashEvent) {
         match event {
             SplashEvent::Tick { progress, log } => self.handle_splash_tick(progress, log),
-            SplashEvent::LocalMusicLoaded(songs) => {
-                self.state.local_music = crate::state::ContentState::Songs(songs);
-            }
             SplashEvent::SetOffline => self.state.offline = true,
         }
     }
@@ -145,11 +144,9 @@ impl App {
             }
             PlaybackEvent::Finished => {
                 self.playback.finish_and_snapshot();
-                self.report_pending_play();
             }
             PlaybackEvent::Error(e) => {
                 self.playback.on_playback_error(e);
-                self.report_pending_play();
             }
             PlaybackEvent::LyricsLoaded {
                 song_id,
@@ -160,13 +157,26 @@ impl App {
                 .on_lyrics_loaded(song_id, lyrics, translated_lyrics),
             PlaybackEvent::HeartbeatSong(song) => {
                 self.playback.play_heartbeat_song(song);
-                self.report_pending_play();
             }
             PlaybackEvent::HeartbeatFallback => {
                 self.playback.on_heartbeat_fallback();
-                self.report_pending_play();
             }
             PlaybackEvent::SetPlaylistId(id) => self.playback.set_playlist_id(id),
+            PlaybackEvent::LikeSong(id) => {
+                let client = self.service.client().clone();
+                tokio::spawn(async move {
+                    let _ = client.like(id, true).await;
+                });
+            }
+            PlaybackEvent::DislikeSong(id) => {
+                let client = self.service.client().clone();
+                tokio::spawn(async move {
+                    match client.recommend_song_dislike(id).await {
+                        Ok(_) => {}
+                        Err(e) => log::warn!("Dislike failed: {e}"),
+                    }
+                });
+            }
         }
     }
 
@@ -237,18 +247,6 @@ impl App {
                     self.execute_command(action);
                 }
             }
-        }
-    }
-
-    pub(crate) fn report_pending_play(&mut self) {
-        if let Some((song_id, time_ms)) = self.playback.take_pending_report() {
-            let client = self.service.client().clone();
-            tokio::spawn(async move {
-                log::info!("上报播放记录: song_id={song_id}, time_ms={time_ms}");
-                if let Err(e) = client.report_play(song_id, time_ms, None).await {
-                    log::error!("Failed to report play for {song_id}: {e}");
-                }
-            });
         }
     }
 

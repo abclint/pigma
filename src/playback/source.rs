@@ -183,26 +183,15 @@ impl AudioSource {
             // album is not a valid file path, fall through to cache/NCM/YouTube
         }
 
-        if self.cache.is_cached(song.id, "mp3")
-            || self.cache.is_cached(song.id, "flac")
-            || self.cache.is_cached(song.id, "m4a")
-            || self.cache.is_cached(song.id, "ogg")
-        {
-            // Try common extensions, prefer the one that exists
-            for ext in &["mp3", "flac", "m4a", "ogg"] {
-                if self.cache.is_cached(song.id, ext) {
-                    let cache = self.cache.clone();
-                    let song_id = song.id;
-                    let ext = ext.to_string();
-                    let file =
-                        tokio::task::spawn_blocking(move || cache.open_cached(song_id, &ext))
-                            .await
-                            .map_err(|e| format!("无法打开缓存文件: {e}"))?
-                            .map_err(|e| format!("无法打开缓存文件: {e}"))?;
-                    return Ok(SharedReader(Arc::new(Mutex::new(Box::new(file)))));
-                }
-            }
-            unreachable!("is_cached checked above");
+        if let Some(ext) = self.cache.find_cached_extension(song.id) {
+            let cache = self.cache.clone();
+            let song_id = song.id;
+            let ext = ext.to_string();
+            let file = tokio::task::spawn_blocking(move || cache.open_cached(song_id, &ext))
+                .await
+                .map_err(|e| format!("无法打开缓存文件: {e}"))?
+                .map_err(|e| format!("无法打开缓存文件: {e}"))?;
+            return Ok(SharedReader(Arc::new(Mutex::new(Box::new(file)))));
         }
 
         // Try NCM source — transient network failures are retried once,

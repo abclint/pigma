@@ -93,7 +93,7 @@ fn render_search(f: &mut Frame, search: &SearchState, colors: &Theme, area: Rect
         ))
     } else {
         Line::from(Span::styled(
-            value.clone(),
+            value.as_str(),
             Style::default().fg(colors.text),
         ))
     };

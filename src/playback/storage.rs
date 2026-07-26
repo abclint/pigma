@@ -80,7 +80,10 @@ impl PlaylistStorage {
             progress,
         };
         if let Ok(json) = serde_json::to_string_pretty(&saved) {
-            let _ = fs::write(self.auto_save_path(), json);
+            let path = self.auto_save_path();
+            tokio::task::spawn_blocking(move || {
+                let _ = fs::write(path, json);
+            });
         }
     }
 
@@ -97,7 +100,8 @@ impl PlaylistStorage {
         let path = self.base_dir.join(format!("{}.json", name));
         let owned: Vec<SongInfo> = songs.iter().map(|s| (**s).clone()).collect();
         if let Ok(json) = serde_json::to_string_pretty(&owned) {
-            fs::write(path, json).is_ok()
+            tokio::task::spawn_blocking(move || fs::write(path, json).is_ok());
+            true
         } else {
             false
         }

@@ -5,6 +5,35 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 本项目遵循 [语义化版本控制](https://semver.org/lang/zh-CN/)。
 
+## [0.1.4] - 2026-07-26
+
+### 新增
+- 每日推荐「不感兴趣」：按 `d` 键标记歌曲为不感兴趣，告诉算法不再推荐类似歌曲
+- 每日推荐「喜欢」：按 `s` 键将歌曲添加到我喜欢的音乐（所有歌曲页面可用）
+- 代理目标配置 `proxy_target`：支持 `yt`（代理 YouTube，默认）、`ncm`（代理网易云）、`both`（都代理）
+
+### 变更
+- 性能优化：歌词逐字渐变渲染消除 per-char String 分配（零分配借用）
+- 性能优化：渐变预设从字符串 dispatch 改为枚举 match，消除每帧多次字符串比较
+- 性能优化：表格内容字段查询返回 `Cow` 避免 String clone
+- 性能优化：播放栏时间显示复用 `format_duration_into` buffer
+- 性能优化：缓存查找合并为单次 RwLock + 遍历（原来 4 次锁 + stat）
+- 性能优化：缓存总大小用 `AtomicU64` 追踪，evict 避免 O(n) stat 系统调用
+- 性能优化：evict 排序避免 filename clone
+- 性能优化：`collect_cached_songs` 移除冗余 `path.exists()` 检查
+- 性能优化：存储 IO（playlist 保存）通过 `spawn_blocking` 卸载到 blocking 线程
+- 本地音乐改为按需加载：切换导航时释放，切回时从磁盘缓存或重新扫描
+- 我喜欢的音乐：修复缓存写入缺失，现在首次加载后会写入磁盘缓存
+- 我喜欢的音乐：最新喜欢的歌曲显示在列表顶部（IDs reverse）
+- NCM 代理修复：`like` 接口参数修正（端点 `/api/radio/like`，参数 `trackId`/`alg`/`time`）
+- 每日推荐 dislike 接口修正为 `/api/v2/discovery/recommend/dislike`（参数 `resId`/`resType`/`sceneType`）
+
+### 移除
+- 播放上报功能（`report_play` API 调用及 `pending_report` 机制）
+
+### 修复
+- 修复 ratatui-image 加载专辑封面占用过大内存的问题（请求 NCM CDN 200x200 缩略图替代原图）
+
 ## [0.1.3] - 2026-07-25
 
 ### 新增

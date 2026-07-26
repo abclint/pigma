@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -14,6 +15,12 @@ use crate::state::ContentState;
 #[derive(Serialize, Deserialize)]
 struct ContentCacheEntry {
     data: ContentState,
+    cached_at: u64,
+}
+
+#[derive(Serialize)]
+struct ContentCacheEntryRef<'a> {
+    data: &'a ContentState,
     cached_at: u64,
 }
 
@@ -83,6 +90,7 @@ pub struct CacheManager {
     template: String,
     index: Arc<RwLock<CacheIndex>>,
     max_cache_bytes: u64,
+    cached_total_bytes: Arc<AtomicU64>,
 }
 
 impl CacheManager {
@@ -90,6 +98,7 @@ impl CacheManager {
         let lyrics_dir = base_dir.join("lyrics");
         let content_dir = base_dir.join("content");
         let index = Self::load_index_static(&downloads_dir);
+        let total = Self::compute_total_bytes(&downloads_dir, &index);
         Self {
             downloads_dir,
             lyrics_dir,
@@ -97,7 +106,18 @@ impl CacheManager {
             template,
             index: Arc::new(RwLock::new(index)),
             max_cache_bytes: DEFAULT_MAX_CACHE_BYTES,
+            cached_total_bytes: Arc::new(AtomicU64::new(total)),
         }
+    }
+
+    fn compute_total_bytes(downloads_dir: &Path, index: &CacheIndex) -> u64 {
+        index
+            .values()
+            .filter_map(|e| {
+                let path = downloads_dir.join(&e.filename);
+                fs::metadata(&path).ok().map(|m| m.len())
+            })
+            .sum()
     }
 
     fn index_path(dir: &Path) -> PathBuf {
@@ -129,10 +149,14 @@ impl CacheManager {
     }
 
     pub fn remove_from_index(&self, song_id: u64) {
-        self.index
-            .write()
-            .unwrap_or_else(|e| e.into_inner())
-            .remove(&song_id);
+        let mut index = self.index.write().unwrap_or_else(|e| e.into_inner());
+        if let Some(entry) = index.remove(&song_id) {
+            let path = self.downloads_dir.join(&entry.filename);
+            if let Ok(meta) = fs::metadata(&path) {
+                self.cached_total_bytes
+                    .fetch_sub(meta.len(), Ordering::Relaxed);
+            }
+        }
     }
 
     /// Persist the in-memory cache index to disk.
@@ -186,6 +210,22 @@ impl CacheManager {
         self.cache_path(id, ext).exists()
     }
 
+    /// Find the first cached extension for a song in a single lock + iteration.
+    /// Returns `Some(ext)` if any cached file exists, `None` otherwise.
+    pub fn find_cached_extension(&self, id: u64) -> Option<&'static str> {
+        const EXTENSIONS: &[&str] = &["mp3", "flac", "m4a", "ogg"];
+        let index = self.index.read().unwrap_or_else(|e| e.into_inner());
+        if index.contains_key(&id) {
+            // Index entry exists — check which extension file is on disk
+            for &ext in EXTENSIONS {
+                if self.cache_path(id, ext).exists() {
+                    return Some(ext);
+                }
+            }
+        }
+        None
+    }
+
     pub fn ensure_dir(&self) -> io::Result<()> {
         fs::create_dir_all(&self.downloads_dir)
     }
@@ -214,6 +254,8 @@ impl CacheManager {
             .map(|d| d.as_secs())
             .unwrap_or(0);
         let filename = self.resolve_filename(song, ext);
+        let path = self.downloads_dir.join(&filename);
+        let file_bytes = fs::metadata(&path).ok().map(|m| m.len()).unwrap_or(0);
         self.index
             .write()
             .unwrap_or_else(|e| e.into_inner())
@@ -225,6 +267,8 @@ impl CacheManager {
                     accessed_at: now,
                 },
             );
+        self.cached_total_bytes
+            .fetch_add(file_bytes, Ordering::Relaxed);
     }
 
     /// Remove index entries whose files no longer exist or are empty.
@@ -321,12 +365,9 @@ impl CacheManager {
     /// Collect cached songs by iterating the index under a read lock, avoiding
     /// a full clone of the HashMap.
     fn collect_cached_songs(&self, index: &CacheIndex) -> Vec<SongInfo> {
-        let mut songs = Vec::new();
+        let mut songs = Vec::with_capacity(index.len());
         for (id, entry) in index {
             let path = self.downloads_dir.join(&entry.filename);
-            if !path.exists() {
-                continue;
-            }
             let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
             let (name, singer) = self.parse_filename(stem, *id);
             songs.push(SongInfo {
@@ -414,7 +455,7 @@ impl CacheManager {
         (stem.to_string(), String::new())
     }
 
-    pub fn save_content_cache(&self, api: &str, content: ContentState) {
+    pub fn save_content_cache(&self, api: &str, content: &ContentState) {
         if let Err(e) = fs::create_dir_all(&self.content_dir) {
             log::warn!("Failed to create content cache dir: {e}");
             return;
@@ -423,7 +464,7 @@ impl CacheManager {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        let entry = ContentCacheEntry {
+        let entry = ContentCacheEntryRef {
             data: content,
             cached_at,
         };
@@ -442,56 +483,44 @@ impl CacheManager {
     /// Evict least-recently-accessed cached audio files when total size exceeds
     /// `max_cache_bytes`. Returns the number of entries evicted.
     pub fn evict(&self) -> usize {
-        let total_bytes = {
-            let index = self.index.read().unwrap_or_else(|e| e.into_inner());
-            self.total_cache_size(&index)
-        };
+        let total_bytes = self.cached_total_bytes.load(Ordering::Relaxed);
         if total_bytes <= self.max_cache_bytes {
             return 0;
         }
 
         let mut index = self.index.write().unwrap_or_else(|e| e.into_inner());
-        let total = self.total_cache_size(&index);
+        let total = self.cached_total_bytes.load(Ordering::Relaxed);
         if total <= self.max_cache_bytes {
             return 0;
         }
 
-        // Collect (id, filename, accessed_at) and sort by accessed_at ascending
-        let mut entries: Vec<(u64, String, u64)> = index
-            .iter()
-            .map(|(id, e)| (*id, e.filename.clone(), e.accessed_at))
-            .collect();
-        entries.sort_by_key(|e| e.2);
+        // Sort by accessed_at ascending — collect only IDs, avoid cloning filenames
+        let mut entries: Vec<(u64, u64)> =
+            index.iter().map(|(id, e)| (*id, e.accessed_at)).collect();
+        entries.sort_by_key(|e| e.1);
 
         let mut evicted = 0;
         let mut freed = 0u64;
-        for (id, filename, _) in &entries {
+        for (id, _) in &entries {
             if total - freed <= self.max_cache_bytes {
                 break;
             }
-            let path = self.downloads_dir.join(filename);
-            if let Ok(meta) = fs::metadata(&path) {
-                freed += meta.len();
+            if let Some(entry) = index.get(id) {
+                let path = self.downloads_dir.join(&entry.filename);
+                if let Ok(meta) = fs::metadata(&path) {
+                    freed += meta.len();
+                }
+                let _ = fs::remove_file(&path);
             }
-            let _ = fs::remove_file(&path);
             index.remove(id);
             evicted += 1;
         }
 
         if evicted > 0 {
+            self.cached_total_bytes.fetch_sub(freed, Ordering::Relaxed);
             log::info!("Evicted {evicted} cached songs, freed {freed} bytes");
         }
         evicted
-    }
-
-    fn total_cache_size(&self, index: &CacheIndex) -> u64 {
-        index
-            .values()
-            .filter_map(|e| {
-                let path = self.downloads_dir.join(&e.filename);
-                fs::metadata(&path).ok().map(|m| m.len())
-            })
-            .sum()
     }
 }
 

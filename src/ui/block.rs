@@ -5,7 +5,7 @@ use ratatui::{
     widgets::{Block, Widget},
 };
 
-use crate::utils::gradient_color;
+use crate::utils::GradientPreset;
 
 pub struct CornerBlock<'a> {
     block: Block<'a>,
@@ -16,7 +16,7 @@ pub struct CornerBlock<'a> {
     h_size: u16,
     v_size: u16,
     follow_corner_color: bool,
-    border_gradient: Option<String>,
+    border_gradient: Option<GradientPreset>,
     border_gradient_speed: f64,
     tick: u64,
 }
@@ -57,7 +57,7 @@ impl<'a> CornerBlock<'a> {
         self
     }
 
-    pub fn border_gradient(mut self, preset: Option<String>) -> Self {
+    pub fn border_gradient(mut self, preset: Option<GradientPreset>) -> Self {
         self.border_gradient = preset;
         self
     }
@@ -132,9 +132,7 @@ impl<'a> Widget for CornerBlock<'a> {
         }
 
         // border gradient: 优先于 follow_corner_color
-        if let Some(ref preset) = self.border_gradient
-            && !preset.is_empty()
-        {
+        if let Some(preset) = self.border_gradient {
             let h_span = right.saturating_sub(left);
             let v_span = bottom.saturating_sub(top);
             let offset = self.tick as f32 * self.border_gradient_speed as f32;
@@ -147,7 +145,7 @@ impl<'a> Widget for CornerBlock<'a> {
                     (x - left) as f32 / h_span as f32
                 };
                 let t = (base + offset).rem_euclid(1.0);
-                let [r, g, b] = gradient_color(preset, t);
+                let [r, g, b] = preset.color(t);
                 if let Some(cell) = buf.cell_mut((x, top)) {
                     cell.fg = Color::Rgb(r, g, b);
                 }
@@ -160,7 +158,7 @@ impl<'a> Widget for CornerBlock<'a> {
                     (right - x) as f32 / h_span as f32
                 };
                 let t = (base + offset).rem_euclid(1.0);
-                let [r, g, b] = gradient_color(preset, t);
+                let [r, g, b] = preset.color(t);
                 if let Some(cell) = buf.cell_mut((x, bottom)) {
                     cell.fg = Color::Rgb(r, g, b);
                 }
@@ -173,7 +171,7 @@ impl<'a> Widget for CornerBlock<'a> {
                     (y - top) as f32 / v_span as f32
                 };
                 let t = (base + offset).rem_euclid(1.0);
-                let [r, g, b] = gradient_color(preset, t);
+                let [r, g, b] = preset.color(t);
                 if let Some(cell) = buf.cell_mut((left, y)) {
                     cell.fg = Color::Rgb(r, g, b);
                 }
@@ -186,7 +184,7 @@ impl<'a> Widget for CornerBlock<'a> {
                     (bottom - y) as f32 / v_span as f32
                 };
                 let t = (base + offset).rem_euclid(1.0);
-                let [r, g, b] = gradient_color(preset, t);
+                let [r, g, b] = preset.color(t);
                 if let Some(cell) = buf.cell_mut((right, y)) {
                     cell.fg = Color::Rgb(r, g, b);
                 }

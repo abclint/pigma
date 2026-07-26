@@ -31,7 +31,6 @@ impl App {
     pub(super) fn start_splash_boot(&self) {
         let sender = self.state.events.sender();
         let client = self.service.client().clone();
-        let music_dir = dirs::home_dir().unwrap_or_default().join("Music");
 
         tokio::spawn(async move {
             let send = |progress: f64, text: &str, level: LogLevel| {
@@ -71,23 +70,6 @@ impl App {
                 send_event(&sender, SplashEvent::SetOffline.into());
                 send(0.25, "Network: offline, offline mode", LogLevel::Warning);
             }
-
-            send(
-                0.50,
-                &format!("Scanning local music: {}", music_dir.display()),
-                LogLevel::Info,
-            );
-            let local_songs =
-                tokio::task::spawn_blocking(move || crate::playback::scan_local_music(&music_dir))
-                    .await
-                    .unwrap_or_default();
-            let count = local_songs.len();
-            send(
-                0.80,
-                &format!("Local music: {} tracks found", count),
-                LogLevel::Success,
-            );
-            send_event(&sender, SplashEvent::LocalMusicLoaded(local_songs).into());
 
             send(0.98, "Ready.", LogLevel::Success);
             send_event(

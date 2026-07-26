@@ -19,10 +19,37 @@ impl App {
         };
 
         if api == ApiEndpoint::LocalMusic {
-            self.state
-                .navigation
-                .set_content(self.state.local_music.clone());
-            self.state.navigation.content_selected = 0;
+            self.state.navigation.clear_breadcrumb();
+            self.state.navigation.set_content(ContentState::Loading);
+            let cache = self.service.cache().clone();
+            let ttl = self.config.content_cache_ttl;
+            let sender = self.state.events.sender();
+            let music_dir = dirs::home_dir().unwrap_or_default().join("Music");
+
+            tokio::spawn(async move {
+                if ttl > 0
+                    && let Some(cached) = cache.load_content_cache_async(&api_str, ttl).await
+                {
+                    send_event(&sender, NavigationEvent::ContentLoaded(cached).into());
+                    return;
+                }
+                let songs = tokio::task::spawn_blocking(move || {
+                    crate::playback::scan_local_music(&music_dir)
+                })
+                .await
+                .unwrap_or_default();
+                let state = ContentState::Songs(songs);
+                if ttl > 0 {
+                    let cache_clone = cache.clone();
+                    let state_clone = state.clone();
+                    tokio::task::spawn_blocking(move || {
+                        cache_clone.save_content_cache("__local_music__", &state_clone);
+                    })
+                    .await
+                    .ok();
+                }
+                send_event(&sender, NavigationEvent::ContentLoaded(state).into());
+            });
             return Ok(());
         }
 
@@ -62,6 +89,15 @@ impl App {
                 && let Some(uid) = uid
             {
                 let (state, playlist_id) = service.load_liked_songs(uid, limit).await;
+                if ttl > 0 {
+                    let cache_clone = cache.clone();
+                    let state_clone = state.clone();
+                    tokio::task::spawn_blocking(move || {
+                        cache_clone.save_content_cache("__liked__", &state_clone);
+                    })
+                    .await
+                    .ok();
+                }
                 send_event(&sender, NavigationEvent::ContentLoaded(state).into());
                 if let Some(id) = playlist_id {
                     send_event(
@@ -79,7 +115,7 @@ impl App {
                 let api_str_clone = api_str.clone();
                 let state_clone = state.clone();
                 tokio::task::spawn_blocking(move || {
-                    cache_clone.save_content_cache(&api_str_clone, state_clone);
+                    cache_clone.save_content_cache(&api_str_clone, &state_clone);
                 })
                 .await
                 .ok();
