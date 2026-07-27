@@ -1,3 +1,11 @@
+## [0.1.5] - 2026-07-27
+
+### 🚀 Features
+
+- *(navigation)* Add saved albums navigation tab (#18) (AshGrey🥕)
+- 迁移 API 到 service 调用，完善上传、本地音乐云盘及封面缓存，更新贡献指南 (akirco)
+- fixs: 缓存值`accessed_at`始终为0,快速导航时表格内容覆盖
+
 ## [0.1.4] - 2026-07-26
 
 ### 新增
