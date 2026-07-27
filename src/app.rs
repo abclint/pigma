@@ -38,10 +38,10 @@ impl App {
                     self.navigate_to_local();
                 } else if self.service.client().is_logged_in() {
                     self.navigate_to_main();
-                    let client = self.service.client().clone();
+                    let service = self.service.clone();
                     let sender = self.state.events.sender();
                     tokio::spawn(async move {
-                        match client.login_status().await {
+                        match service.login_status().await {
                             Ok(info) => {
                                 if sender.send(AuthEvent::Success(info).into()).is_err() {
                                     log::error!("Failed to send LoginSuccess: receiver dropped");
@@ -112,6 +112,7 @@ impl App {
                 AppEvent::Playback(e) => self.handle_playback_event(e),
                 AppEvent::Navigation(e) => self.handle_navigation_event(e),
                 AppEvent::Command(e) => self.handle_command_event(e),
+                AppEvent::Toast(msg) => self.toast(msg),
             },
         }
         Ok(())
@@ -163,15 +164,15 @@ impl App {
             }
             PlaybackEvent::SetPlaylistId(id) => self.playback.set_playlist_id(id),
             PlaybackEvent::LikeSong(id) => {
-                let client = self.service.client().clone();
+                let service = self.service.clone();
                 tokio::spawn(async move {
-                    let _ = client.like(id, true).await;
+                    let _ = service.like_song(id, true).await;
                 });
             }
             PlaybackEvent::DislikeSong(id) => {
-                let client = self.service.client().clone();
+                let service = self.service.clone();
                 tokio::spawn(async move {
-                    match client.recommend_song_dislike(id).await {
+                    match service.dislike_song(id).await {
                         Ok(_) => {}
                         Err(e) => log::warn!("Dislike failed: {e}"),
                     }
@@ -191,8 +192,9 @@ impl App {
             NavigationEvent::ContentLoadedPaged {
                 content,
                 pagination,
+                generation,
             } => {
-                self.handle_content_loaded_paged(content, pagination);
+                self.handle_content_loaded_paged(content, pagination, generation);
             }
             NavigationEvent::PlaylistSelect { id, name } => self.handle_playlist_select(id, name),
             NavigationEvent::BreadcrumbSet(name) => self.handle_breadcrumb(name),
@@ -207,6 +209,7 @@ impl App {
                 }
             }
             NavigationEvent::LoadMore => self.handle_load_more(),
+            NavigationEvent::UploadCachedSong(row) => self.handle_upload_cached_song(row),
         }
     }
 

@@ -11,10 +11,11 @@ pub mod types;
 use std::sync::Arc;
 use std::time::Duration;
 
-use ncm_api::{NcmClient, SongInfo, SongQuality};
+use ncm_api::{SongInfo, SongQuality};
 use tokio::sync::mpsc;
 
 use crate::event::{Event, PlaybackEvent};
+use crate::service::ApiService;
 
 use self::controller::PlaybackHandle;
 use self::mode::Strategy;
@@ -34,7 +35,7 @@ pub struct PlaybackEngine {
     source: AudioSource,
     pub(super) controller: PlaybackHandle,
     pub(super) event_tx: mpsc::UnboundedSender<Event>,
-    pub(super) api: Arc<NcmClient>,
+    pub(super) service: ApiService,
     playlist_id: Option<u64>,
     consecutive_errors: u32,
 }
@@ -42,7 +43,7 @@ pub struct PlaybackEngine {
 impl PlaybackEngine {
     pub fn new(
         event_tx: mpsc::UnboundedSender<Event>,
-        api: Arc<NcmClient>,
+        service: ApiService,
         cache: crate::cache::CacheManager,
         quality: SongQuality,
         proxy: String,
@@ -53,10 +54,10 @@ impl PlaybackEngine {
             queue: PlaylistQueue::new(),
             strategy: mode::Strategy::Sequential,
             storage,
-            source: AudioSource::new(api.clone(), cache, quality, proxy),
+            source: AudioSource::new(service.clone(), cache, quality, proxy),
             controller: PlaybackHandle::new(event_tx.clone()),
             event_tx: event_tx.clone(),
-            api,
+            service,
             playlist_id: None,
             consecutive_errors: 0,
         };

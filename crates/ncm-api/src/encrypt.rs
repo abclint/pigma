@@ -90,7 +90,7 @@ pub fn eapi(url: &str, text: &str) -> String {
     let data = format!("{}-36cd479b6b5-{}-36cd479b6b5-{}", url, text, digest);
 
     let encrypted = aes_ecb_encrypt(data.as_bytes(), EAPIKEY);
-    let params: String = encrypted.iter().map(|b| format!("{:02X}", b)).collect();
+    let params: String = encrypted.iter().map(|b| format!("{:02x}", b)).collect();
 
     format!("params={}", utf8_percent_encode(&params))
 }

@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 const BASE_URL: &str = "https://music.163.com";
-const EAPI_BASE: &str = "https://interface.music.163.com";
+const EAPI_BASE: &str = "https://music.163.com";
 
 struct RequestCookies {
     csrf: String,
@@ -81,18 +81,10 @@ impl NcmClientBuilder {
             .build()
             .map_err(|e| NcmError::Session(format!("failed to build HTTP client: {e}")))?;
 
-        let no_proxy_http = reqwest::Client::builder()
-            .timeout(self.timeout)
-            .no_proxy()
-            .http1_only()
-            .build()
-            .map_err(|e| NcmError::Session(format!("failed to build no_proxy HTTP client: {e}")))?;
-
         let ua = self.user_agent.unwrap_or_else(random_ua);
 
         Ok(NcmClient {
             http,
-            no_proxy_http,
             ua,
             store: Arc::new(Mutex::new(CookieStore::new(cookie_path))),
         })
@@ -114,7 +106,6 @@ fn random_ua() -> String {
 /// 网易云音乐 API 客户端
 pub struct NcmClient {
     http: Client,
-    no_proxy_http: Client,
     ua: String,
     store: Arc<Mutex<CookieStore>>,
 }
@@ -242,6 +233,80 @@ impl NcmClient {
         self.send_request(url, body, "music.163.com", false).await
     }
 
+    /// 与 `request_eapi` 相同但接受 `serde_json::Value` 参数（保留数字/布尔类型）。
+    async fn request_eapi_value(&self, path: &str, params: serde_json::Value) -> Result<String, NcmError> {
+        let cookies = self.prepare_request(true)?;
+
+        let mut data = match params {
+            serde_json::Value::Object(m) => serde_json::Value::Object(m),
+            _ => return Err(NcmError::Session("request_eapi_value expects an object".into())),
+        };
+
+        // Add csrf_token
+        if let serde_json::Value::Object(ref mut map_obj) = data {
+            map_obj.insert(
+                "csrf_token".to_string(),
+                serde_json::Value::String(cookies.csrf.clone()),
+            );
+        }
+
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        let buildver: String = now_ms.to_string().chars().take(10).collect();
+        let request_id = format!("{}_{:04}", now_ms, rand::random::<u16>() % 1000);
+
+        if let serde_json::Value::Object(ref mut map_obj) = data {
+            map_obj.insert(
+                "header".to_string(),
+                serde_json::json!({
+                    "osver": "16.2",
+                    "deviceId": "",
+                    "os": "iPhone OS",
+                    "appver": "9.0.90",
+                    "versioncode": "140",
+                    "mobilename": "",
+                    "buildver": buildver,
+                    "resolution": "1920x1080",
+                    "__csrf": cookies.csrf,
+                    "channel": "",
+                    "requestId": request_id,
+                }),
+            );
+        }
+
+        let params_json = data.to_string();
+        let body = encrypt::eapi(path, &params_json);
+
+        let eapi_path = path.replacen("/api", "/eapi", 1);
+        let url = format!("{}{}", EAPI_BASE, eapi_path);
+
+        let resp = self
+            .http
+            .post(&url)
+            .header("User-Agent", "NeteaseMusic 9.0.90/5038 (iPhone; iOS 16.2; zh_CN)")
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .header("Cookie", &cookies.cookie_header)
+            .body(body)
+            .send()
+            .await?;
+
+        {
+            let headers = resp.headers().clone();
+            self.with_store(|store| store.update_from_response(&headers))?;
+        }
+
+        let status = resp.status();
+        let text = resp.text().await?;
+        let preview = text.chars().take(200).collect::<String>();
+        log::debug!(
+            "request_eapi_value path={path} status={status} body(len={}): {preview:?}",
+            text.len(),
+        );
+        Ok(text)
+    }
+
     async fn request_eapi(&self, path: &str, params: &[(&str, &str)]) -> Result<String, NcmError> {
         let cookies = self.prepare_request(true)?;
 
@@ -282,9 +347,8 @@ impl NcmClient {
         let eapi_path = path.replacen("/api", "/eapi", 1);
         let url = format!("{}{}", EAPI_BASE, eapi_path);
 
-        let client = &self.no_proxy_http;
-
-        let resp = client
+        let resp = self
+            .http
             .post(&url)
             .header("User-Agent", &self.ua)
             .header("Accept", "*/*")
@@ -302,13 +366,28 @@ impl NcmClient {
             self.with_store(|store| store.update_from_response(&headers))?;
         }
 
+        let status = resp.status();
         let text = resp.text().await?;
+        let preview = text.chars().take(200).collect::<String>();
+        log::debug!(
+            "request_eapi path={path} status={status} body(len={}): {preview:?}",
+            text.len(),
+        );
         Ok(text)
     }
 
     fn check_api_code(value: &Value) -> Result<(), NcmError> {
         let code = value.get("code").and_then(|c| c.as_i64()).unwrap_or(0) as i32;
         if code != 200 {
+            return Err(NcmError::api(value.clone()));
+        }
+        Ok(())
+    }
+
+    /// 上传专用状态码检查：接受 200 和 400（参考实现将 400 视为特殊状态继续流程）。
+    fn check_upload_code(value: &Value) -> Result<(), NcmError> {
+        let code = value.get("code").and_then(|c| c.as_i64()).unwrap_or(0) as i32;
+        if code != 200 && code != 400 {
             return Err(NcmError::api(value.clone()));
         }
         Ok(())
@@ -1370,6 +1449,17 @@ impl NcmClient {
     /// 5. `/api/upload/cloud/info/v2` 提交元数据
     /// 6. `/api/cloud/pub/v2` 发布到云盘
     pub async fn upload_song(&self, path: &std::path::Path) -> Result<CloudUploadResult, NcmError> {
+        self.upload_song_with_meta(path, "", "", "").await
+    }
+
+    /// 同上，但允许传入元数据 hint（从缓存索引获取的 name/singer/album），标签解析失败时作为 fallback。
+    pub async fn upload_song_with_meta(
+        &self,
+        path: &std::path::Path,
+        song_hint: &str,
+        album_hint: &str,
+        artist_hint: &str,
+    ) -> Result<CloudUploadResult, NcmError> {
         let file_name = path
             .file_name()
             .and_then(|n| n.to_str())
@@ -1394,18 +1484,18 @@ impl NcmClient {
         let (md5, size) = stream_file_digest(path)?;
         let bitrate = 999000u32;
 
-        // 步骤 1：上传前检查
+        // 步骤 1：上传前检查（参数对齐参考实现，保留 JSON 类型）
         let check = self
-            .request_weapi(
+            .request_eapi_value(
                 "/api/cloud/upload/check",
-                &[
-                    ("bitrate", &bitrate.to_string()),
-                    ("ext", ""),
-                    ("length", &size.to_string()),
-                    ("md5", &md5),
-                    ("songId", "0"),
-                    ("version", "1"),
-                ],
+                serde_json::json!({
+                    "bitrate": bitrate,
+                    "ext": "",
+                    "length": size,
+                    "md5": md5,
+                    "songId": "0",
+                    "version": 1,
+                }),
             )
             .await?;
         let check_value: Value = serde_json::from_str(&check)?;
@@ -1414,15 +1504,24 @@ impl NcmClient {
             .get("needUpload")
             .and_then(|v| v.as_bool())
             .unwrap_or(true);
-        let check_song_id = check_value
+
+        let check_song_id: String = check_value
             .get("songId")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .or_else(|| check_value.get("songId").and_then(|v| v.as_u64().map(|n| n.to_string())))
+            .unwrap_or_else(|| "0".to_string());
 
         // 步骤 2：解析音频元数据（用独立文件句柄，按需 seek 读取标签，不占满内存）
         let meta_file = std::fs::File::open(path)
             .map_err(|e| NcmError::Session(format!("failed to open {}: {e}", path.display())))?;
-        let (song_name, album, artist) = parse_audio_meta(meta_file, mime);
+        let (song_name, album, artist) = {
+            let (s, a, ar) = parse_audio_meta(meta_file, mime);
+            (
+                if s.is_empty() && !song_hint.is_empty() { song_hint.to_string() } else { s },
+                if a.is_empty() && !album_hint.is_empty() { album_hint.to_string() } else { a },
+                if ar.is_empty() && !artist_hint.is_empty() { artist_hint.to_string() } else { ar },
+            )
+        };
 
         // 文件名归一化（对齐参考实现）
         let raw_name = file_name
@@ -1432,17 +1531,17 @@ impl NcmClient {
 
         // 步骤 3：申请 NOS token
         let token_res = self
-            .request_weapi(
+            .request_eapi_value(
                 "/api/nos/token/alloc",
-                &[
-                    ("bucket", ""),
-                    ("ext", &ext),
-                    ("filename", &raw_name),
-                    ("local", "false"),
-                    ("nos_product", "3"),
-                    ("type", "audio"),
-                    ("md5", &md5),
-                ],
+                serde_json::json!({
+                    "bucket": "",
+                    "ext": ext,
+                    "filename": raw_name,
+                    "local": false,
+                    "nos_product": 3,
+                    "type": "audio",
+                    "md5": md5,
+                }),
             )
             .await?;
         let token_value: Value = serde_json::from_str(&token_res)?;
@@ -1450,57 +1549,88 @@ impl NcmClient {
         let token_result = token_value
             .get("result")
             .ok_or_else(|| NcmError::parse("nos token alloc: result not found", &token_value))?;
-        let object_key = token_result
-            .get("objectKey")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| NcmError::parse("nos token alloc: objectKey missing", &token_value))?
-            .replace('/', "%2F");
-        let nos_token = token_result
-            .get("token")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| NcmError::parse("nos token alloc: token missing", &token_value))?
-            .to_string();
         let resource_id = token_result
             .get("resourceId")
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
 
-        // 步骤 4：上传原始字节到 NOS（以文件作为请求体，流式上传）
+        // 步骤 4：上传原始字节到 NOS（仅当 needUpload 需要上传时），对齐 uploadPlugin
         if need_upload {
-            self.upload_to_nos(path, &object_key, &nos_token, &md5, size)
+            let upload_token = self
+                .request_eapi_value(
+                    "/api/nos/token/alloc",
+                    serde_json::json!({
+                        "bucket": "jd-musicrep-privatecloud-audio-public",
+                        "ext": ext,
+                        "filename": raw_name,
+                        "local": false,
+                        "nos_product": 3,
+                        "type": "audio",
+                        "md5": md5,
+                    }),
+                )
+                .await?;
+            let upload_token_value: Value = serde_json::from_str(&upload_token)?;
+            Self::check_api_code(&upload_token_value)?;
+            let upload_result = upload_token_value
+                .get("result")
+                .ok_or_else(|| NcmError::parse("upload token alloc: result not found", &upload_token_value))?;
+            let upload_object_key = upload_result
+                .get("objectKey")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| NcmError::parse("upload token alloc: objectKey missing", &upload_token_value))?
+                .replace('/', "%2F");
+            let upload_nos_token = upload_result
+                .get("token")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| NcmError::parse("upload token alloc: token missing", &upload_token_value))?
+                .to_string();
+
+            self.upload_to_nos(path, &upload_object_key, &upload_nos_token, &md5, size, &mime)
                 .await?;
         }
 
-        // 步骤 5：提交云盘信息
+        // 步骤 5：提交云盘信息（元数据为空时 fallback 到文件名，对齐参考实现）
         let info = self
-            .request_weapi(
+            .request_eapi_value(
                 "/api/upload/cloud/info/v2",
-                &[
-                    ("md5", &md5),
-                    ("songid", &check_song_id.to_string()),
-                    ("filename", &file_name),
-                    ("song", &song_name),
-                    ("album", &album),
-                    ("artist", &artist),
-                    ("bitrate", &bitrate.to_string()),
-                    ("resourceId", &resource_id.to_string()),
-                ],
+                serde_json::json!({
+                    "md5": md5,
+                    "songid": check_song_id,
+                    "filename": file_name,
+                    "song": if song_name.is_empty() { &raw_name } else { &song_name },
+                    "album": if album.is_empty() { &raw_name } else { &album },
+                    "artist": if artist.is_empty() { "未知" } else { &artist },
+                    "bitrate": bitrate,
+                    "resourceId": resource_id,
+                }),
             )
             .await?;
         let info_value: Value = serde_json::from_str(&info)?;
-        Self::check_api_code(&info_value)?;
+        let info_code = info_value.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
+        if info_code != 200 && info_code != 400 {
+            return Err(NcmError::api(info_value));
+        }
         let info_song_id = info_value
             .get("songId")
             .and_then(|v| v.as_u64())
-            .or(Some(check_song_id))
+            .or_else(|| {
+                info_value
+                    .get("songId")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse().ok())
+            })
             .unwrap_or(0);
 
         // 步骤 6：发布到云盘
         let pub_res = self
-            .request_weapi("/api/cloud/pub/v2", &[("songid", &info_song_id.to_string())])
+            .request_eapi_value(
+                "/api/cloud/pub/v2",
+                serde_json::json!({ "songid": info_song_id }),
+            )
             .await?;
         let pub_value: Value = serde_json::from_str(&pub_res)?;
-        Self::check_api_code(&pub_value)?;
+        Self::check_upload_code(&pub_value)?;
 
         // 合并 step1 + step6 响应（对齐参考实现返回）
         let mut merged = check_value.clone();
@@ -1522,6 +1652,7 @@ impl NcmClient {
         nos_token: &str,
         md5: &str,
         size: u64,
+        mime: &str,
     ) -> Result<(), NcmError> {
         const BUCKET: &str = "jd-musicrep-privatecloud-audio-public";
 
@@ -1559,19 +1690,20 @@ impl NcmClient {
             .post(&url)
             .header("x-nos-token", nos_token)
             .header("Content-MD5", md5)
-            .header("Content-Type", "audio/mpeg")
+            .header("Content-Type", mime)
             .header("Content-Length", size.to_string())
             .body(reqwest::Body::from(file))
             .send()
             .await?;
 
-        if !resp.status().is_success() {
-            let status = resp.status();
+        let status = resp.status();
+        if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
             return Err(NcmError::Session(format!(
                 "nos upload failed: status={status}, body={body}"
             )));
         }
+        log::debug!("nos upload success: status={status}");
         Ok(())
     }
 }
@@ -1620,6 +1752,8 @@ fn parse_audio_meta<R: std::io::Read + std::io::Seek>(
         .or_else(|| tag.get_string(&ItemKey::AlbumArtist))
         .unwrap_or("")
         .to_string();
+
+    // 用文件内容回退：从文件名解析（对齐 js 参考实现）
     (song, album, artist)
 }
 

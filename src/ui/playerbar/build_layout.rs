@@ -46,7 +46,7 @@ pub fn build_default(area: Rect) -> LayoutArea {
 pub fn build_modern(area: Rect, show_cover: bool, _show_volume: bool) -> LayoutArea {
     let cols = Layout::horizontal([
         if show_cover {
-            Constraint::Length(10)
+            Constraint::Length(8)
         } else {
             Constraint::Length(0)
         },
@@ -79,7 +79,7 @@ pub fn build_modern(area: Rect, show_cover: bool, _show_volume: bool) -> LayoutA
 
     // Bottom: song_detail(left) | controls(center) | mode(right)
     let bottom_cols = Layout::horizontal([
-        Constraint::Length(10),
+        Constraint::Length(20),
         Constraint::Length(20),
         Constraint::Length(3),
     ])

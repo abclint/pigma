@@ -20,6 +20,7 @@ impl App {
         let service = self.service.clone();
         let sender = self.state.events.sender();
         let offset = pg.offset + pg.limit;
+        let generation = self.state.navigation.generation;
 
         tokio::spawn(async move {
             if let Some((content, pagination)) =
@@ -30,6 +31,7 @@ impl App {
                     NavigationEvent::ContentLoadedPaged {
                         content,
                         pagination,
+                        generation,
                     }
                     .into(),
                 );
@@ -41,11 +43,22 @@ impl App {
         &mut self,
         content: ContentState,
         pagination: PaginationInfo,
+        generation: u64,
     ) {
-        if let (ContentState::Songs(new_songs), ContentState::Songs(existing)) = (
-            &content,
-            std::sync::Arc::make_mut(&mut self.state.navigation.content),
-        ) {
+        // 过期响应直接丢弃
+        if generation != 0 && generation != self.state.navigation.generation {
+            return;
+        }
+
+        let same_api =
+            self.state.navigation.pagination.as_ref().map(|p| &p.api) == Some(&pagination.api);
+
+        if same_api
+            && let (ContentState::Songs(new_songs), ContentState::Songs(existing)) = (
+                &content,
+                std::sync::Arc::make_mut(&mut self.state.navigation.content),
+            )
+        {
             existing.extend(new_songs.iter().cloned());
             self.state.navigation.pagination = Some(pagination.clone());
             *self.state.navigation.content_rows_cache.borrow_mut() = None;
@@ -158,25 +171,33 @@ impl App {
 
             // Load cover image
             if !song.pic_url.is_empty() {
+                let song_id = song.id;
                 let pic_url = song.pic_url.clone();
                 let cover = self.playback.state.cover.0.clone();
                 let picker = self.picker.clone();
+                let cache = self.service.cache().clone();
                 tokio::task::spawn_blocking(move || {
-                    // Request a small thumbnail from NCM CDN to avoid holding
-                    // full-resolution image data in memory via StatefulProtocol.
-                    let small_url = if pic_url.contains('?') {
-                        format!("{}&param=200y200", pic_url)
+                    let data: Vec<u8> = if let Some(cached) = cache.load_cover(song_id) {
+                        cached
                     } else {
-                        format!("{}?param=200y200", pic_url)
+                        let small_url = if pic_url.contains('?') {
+                            format!("{}&param=200y200", pic_url)
+                        } else {
+                            format!("{}?param=200y200", pic_url)
+                        };
+
+                        let Ok(resp) = reqwest::blocking::get(&small_url) else {
+                            return;
+                        };
+                        let Ok(bytes) = resp.bytes() else {
+                            return;
+                        };
+                        let raw = bytes.to_vec();
+                        cache.save_cover(song_id, &raw);
+                        raw
                     };
 
-                    let Ok(resp) = reqwest::blocking::get(&small_url) else {
-                        return;
-                    };
-                    let Ok(bytes) = resp.bytes() else {
-                        return;
-                    };
-                    let Ok(img) = image::load_from_memory(&bytes) else {
+                    let Ok(img) = image::load_from_memory(&data) else {
                         return;
                     };
 

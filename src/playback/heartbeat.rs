@@ -23,11 +23,11 @@ impl PlaybackEngine {
 
         log::info!("Heartbeat: song_id={} playlist_id={}", song.id, playlist_id);
 
-        let api = self.api.clone();
+        let service = self.service.clone();
         let event_tx = self.event_tx.clone();
 
         tokio::spawn(async move {
-            match api.playmode_intelligence_list(song.id, playlist_id).await {
+            match service.heartbeat_songs(song.id, playlist_id).await {
                 Ok(songs) => {
                     log::info!(
                         "Heartbeat API returned {} songs for song_id={}, playlist_id={}",

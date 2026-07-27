@@ -23,6 +23,7 @@ lyric_gradient = "rainbow"
 quality = "standard"
 
 # 下载缓存目录 (相对于缓存目录或绝对路径)
+# 默认：~/.cache/pigma/downloads
 cache_dir = "downloads"
 
 # 缓存文件命名模板, 可用变量: {id}, {name}, {singer}, {album}
@@ -46,10 +47,10 @@ enabled = true
 rounded = false
 # 边框颜色是否跟随角落颜色
 follow_corner_color = false
-# 边框渐变效果名称 (可选, 不设置则无渐变)，优先级最高
-# border_gradient = "rainbow"
+# 边框渐变效果名称，同歌词渐变名称 (可选, 不设置则无渐变)，优先级最高
+border_gradient = "rainbow"
 # 边框渐变速度 (每秒变化量, 0 表示静态)
-# border_gradient_speed = 0.5
+border_gradient_speed = 0.005
 
 # =============================================================================
 # 播放器栏配置
@@ -66,9 +67,8 @@ unfilled_symbol = "─"
 filled_color = "accent"
 # 进度条未填充颜色
 unfilled_color = "text"
-# 缓冲时进度条未填充颜色
+# 已缓存到本地时进度条轨道颜色
 unfilled_color_cached = "warning"
-
 # 是否启用进度条渐变效果
 gradient_enabled = false
 # 渐变预设: "warm", "cool", "sunset", "ocean", "forest", "neon", "pastel", "rainbow"
@@ -101,7 +101,7 @@ lyrics = "♪ LYRICS"
 log_level = "debug"
 
 # =============================================================================
-# 自定义主题
+# 新增自定义主题
 # =============================================================================
 # 颜色格式: hex (#rrggbb), named (red, blue, ...), 或 indexed (0-255)
 # [[themes]]

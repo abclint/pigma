@@ -23,6 +23,7 @@ pub enum AppEvent {
     Playback(PlaybackEvent),
     Navigation(NavigationEvent),
     Command(CommandEvent),
+    Toast(String),
 }
 
 #[derive(Clone, Debug)]
@@ -73,6 +74,7 @@ pub enum NavigationEvent {
     ContentLoadedPaged {
         content: ContentState,
         pagination: PaginationInfo,
+        generation: u64,
     },
     PlaylistSelect {
         id: u64,
@@ -86,6 +88,7 @@ pub enum NavigationEvent {
     ContentRestore,
     CellAction(usize, usize),
     LoadMore,
+    UploadCachedSong(usize),
 }
 
 #[derive(Clone, Debug)]
