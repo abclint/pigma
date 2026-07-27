@@ -146,6 +146,12 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
                 }
             }
         }
+        KeyCode::Char('u' | 'U') if is_download_view(app) || is_local_music_view(app) => {
+            let sel = app.state.navigation.content_selected;
+            app.state
+                .events
+                .send(NavigationEvent::UploadCachedSong(sel));
+        }
         _ => {}
     }
     Ok(())
@@ -178,7 +184,7 @@ pub(super) fn handle_main_mouse(app: &mut App, kind: MouseEventKind) {
     }
 }
 
-fn is_daily_recommend(app: &App) -> bool {
+fn current_api(app: &App) -> Option<&str> {
     app.state
         .navigation
         .nav
@@ -195,5 +201,16 @@ fn is_daily_recommend(app: &App) -> bool {
             s.items.get(idx)
         })
         .and_then(|item| item.api.as_deref())
-        == Some("recommend_songs")
+}
+
+fn is_daily_recommend(app: &App) -> bool {
+    current_api(app) == Some("recommend_songs")
+}
+
+fn is_download_view(app: &App) -> bool {
+    current_api(app) == Some("__download__")
+}
+
+fn is_local_music_view(app: &App) -> bool {
+    current_api(app) == Some("__local_music__")
 }

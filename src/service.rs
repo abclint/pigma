@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::sync::Arc;
 
 use crate::api::ApiEndpoint;
@@ -201,11 +202,106 @@ impl ApiService {
     }
 
     /// Load artist songs.
-    pub async fn load_artist_songs(&self, artist_id: u64) -> ContentState {
-        match self.client.singer_songs(artist_id).await {
+    pub async fn load_artist_songs(&self, artist_id: u64, limit: u16) -> ContentState {
+        match self
+            .client
+            .singer_all_songs(artist_id, "time", 0, limit)
+            .await
+        {
             Ok(songs) => ContentState::Songs(songs),
             Err(e) => ContentState::Error(e.to_string()),
         }
+    }
+
+    // ── Login ────────────────────────────────────────────────────────────
+
+    pub async fn login_email(
+        &self,
+        username: &str,
+        password: &str,
+    ) -> Result<ncm_api::LoginInfo, ncm_api::NcmError> {
+        self.client.login(username, password).await
+    }
+
+    pub async fn login_phone(
+        &self,
+        ctcode: &str,
+        phone: &str,
+        captcha: &str,
+    ) -> Result<ncm_api::LoginInfo, ncm_api::NcmError> {
+        self.client.login_cellphone(ctcode, phone, captcha).await
+    }
+
+    pub async fn send_captcha(&self, ctcode: &str, phone: &str) -> Result<(), ncm_api::NcmError> {
+        self.client.captcha(ctcode, phone).await
+    }
+
+    pub async fn login_qr_create(&self) -> Result<(String, String), ncm_api::NcmError> {
+        self.client.login_qr_create().await
+    }
+
+    pub async fn login_qr_check(&self, key: &str) -> Result<ncm_api::Msg, ncm_api::NcmError> {
+        self.client.login_qr_check(key).await
+    }
+
+    pub async fn login_status(&self) -> Result<ncm_api::LoginInfo, ncm_api::NcmError> {
+        self.client.login_status().await
+    }
+
+    // ── Song actions ─────────────────────────────────────────────────────
+
+    pub async fn like_song(&self, song_id: u64, like: bool) -> Result<(), ncm_api::NcmError> {
+        self.client.like(song_id, like).await.map(|_| ())
+    }
+
+    pub async fn dislike_song(&self, song_id: u64) -> Result<(), ncm_api::NcmError> {
+        self.client
+            .recommend_song_dislike(song_id)
+            .await
+            .map(|_| ())
+    }
+
+    // ── Song URLs ────────────────────────────────────────────────────────
+
+    pub async fn fetch_song_urls(
+        &self,
+        ids: &[u64],
+        level: ncm_api::SongQuality,
+    ) -> Result<Vec<ncm_api::SongUrl>, ncm_api::NcmError> {
+        self.client.songs_url_v1(ids, level).await
+    }
+
+    // ── Heartbeat ────────────────────────────────────────────────────────
+
+    pub async fn heartbeat_songs(
+        &self,
+        song_id: u64,
+        playlist_id: u64,
+    ) -> Result<Vec<ncm_api::SongInfo>, ncm_api::NcmError> {
+        self.client
+            .playmode_intelligence_list(song_id, playlist_id)
+            .await
+    }
+
+    // ── Cloud disk upload ────────────────────────────────────────────────
+
+    pub async fn upload_song(
+        &self,
+        path: &Path,
+    ) -> Result<ncm_api::CloudUploadResult, ncm_api::NcmError> {
+        self.client.upload_song(path).await
+    }
+
+    pub async fn upload_song_with_meta(
+        &self,
+        path: &Path,
+        song_hint: &str,
+        album_hint: &str,
+        artist_hint: &str,
+    ) -> Result<ncm_api::CloudUploadResult, ncm_api::NcmError> {
+        self.client
+            .upload_song_with_meta(path, song_hint, album_hint, artist_hint)
+            .await
     }
 
     /// Load more cloud disk songs (pagination).

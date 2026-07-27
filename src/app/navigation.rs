@@ -1,5 +1,4 @@
-use std::future::Future;
-use std::sync::Arc;
+use std::path::PathBuf;
 
 use super::{App, send_event};
 use crate::api::ApiEndpoint;
@@ -56,6 +55,8 @@ impl App {
         self.state.navigation.clear_breadcrumb();
         self.state.navigation.set_content(ContentState::Loading);
         self.state.navigation.nav.subtitle = None;
+        self.state.navigation.generation += 1;
+        let generation = self.state.navigation.generation;
         if api == ApiEndpoint::Search {
             self.state.navigation.nav.subtitle = Some("热搜榜".into());
         }
@@ -127,6 +128,7 @@ impl App {
                     NavigationEvent::ContentLoadedPaged {
                         content: state,
                         pagination: pg,
+                        generation,
                     }
                     .into(),
                 );
@@ -139,27 +141,6 @@ impl App {
 
     pub(super) fn handle_breadcrumb(&mut self, name: String) {
         self.state.navigation.nav.subtitle = Some(name);
-    }
-
-    pub(super) fn navigate_to_entity<F, Fut>(&mut self, name: String, api_call: F)
-    where
-        F: FnOnce(Arc<ncm_api::NcmClient>) -> Fut + Send + 'static,
-        Fut: Future<Output = Result<Vec<ncm_api::SongInfo>, ncm_api::NcmError>> + Send,
-    {
-        self.state.navigation.push_breadcrumb();
-        self.state.navigation.set_content(ContentState::Loading);
-
-        let client = self.service.client().clone();
-        let sender = self.state.events.sender();
-        tokio::spawn(async move {
-            let result = api_call(client).await;
-            let state = match result {
-                Ok(songs) => ContentState::Songs(songs),
-                Err(e) => ContentState::Error(e.to_string()),
-            };
-            let _ = sender.send(NavigationEvent::ContentLoaded(state).into());
-            let _ = sender.send(NavigationEvent::BreadcrumbSet(name).into());
-        });
     }
 
     pub(super) fn handle_cell_action(&mut self, row: usize, col: usize) -> color_eyre::Result<()> {
@@ -179,8 +160,14 @@ impl App {
                 if let Some(song) = songs.get(row) {
                     let album_id = song.album_id;
                     let name = format!("{}: {}", column.header, song.album);
-                    self.navigate_to_entity(name, move |client| async move {
-                        client.album(album_id).await.map(|d| d.songs)
+                    self.state.navigation.push_breadcrumb();
+                    self.state.navigation.set_content(ContentState::Loading);
+                    let service = self.service.clone();
+                    let sender = self.state.events.sender();
+                    tokio::spawn(async move {
+                        let state = service.load_album(album_id).await;
+                        let _ = sender.send(NavigationEvent::ContentLoaded(state).into());
+                        let _ = sender.send(NavigationEvent::BreadcrumbSet(name).into());
                     });
                 }
             }
@@ -191,8 +178,15 @@ impl App {
                         return Ok(());
                     }
                     let name = format!("{}: {}", column.header, song.singer);
-                    self.navigate_to_entity(name, move |client| async move {
-                        client.singer_songs(artist_id).await
+                    self.state.navigation.push_breadcrumb();
+                    self.state.navigation.set_content(ContentState::Loading);
+                    let service = self.service.clone();
+                    let sender = self.state.events.sender();
+                    let limit = self.config.search_limit;
+                    tokio::spawn(async move {
+                        let state = service.load_artist_songs(artist_id, limit).await;
+                        let _ = sender.send(NavigationEvent::ContentLoaded(state).into());
+                        let _ = sender.send(NavigationEvent::BreadcrumbSet(name).into());
                     });
                 }
             }
@@ -203,13 +197,89 @@ impl App {
                         return Ok(());
                     }
                     let name = format!("{}: {}", column.header, singer.name);
-                    self.navigate_to_entity(name, move |client| async move {
-                        client.singer_songs(artist_id).await
+                    self.state.navigation.push_breadcrumb();
+                    self.state.navigation.set_content(ContentState::Loading);
+                    let service = self.service.clone();
+                    let sender = self.state.events.sender();
+                    let limit = self.config.search_limit;
+                    tokio::spawn(async move {
+                        let state = service.load_artist_songs(artist_id, limit).await;
+                        let _ = sender.send(NavigationEvent::ContentLoaded(state).into());
+                        let _ = sender.send(NavigationEvent::BreadcrumbSet(name).into());
                     });
                 }
             }
             _ => {}
         }
         Ok(())
+    }
+
+    pub(super) fn handle_upload_cached_song(&mut self, row: usize) {
+        let songs = match self.state.navigation.content.as_ref() {
+            ContentState::Songs(songs) => songs,
+            _ => return,
+        };
+        let song = match songs.get(row) {
+            Some(s) => s.clone(),
+            None => return,
+        };
+
+        self.toast(format!("⬆ 正在上传 {}...", song.name));
+
+        let is_local = song.copyright == ncm_api::SongCopyright::Free
+            && !song.album.is_empty()
+            && std::path::Path::new(&song.album).exists();
+        let service = self.service.clone();
+        let cache = self.service.cache().clone();
+        let sender = self.state.events.sender();
+        let song_id = song.id;
+        let cached_path: Option<PathBuf> = if is_local {
+            Some(std::path::PathBuf::from(&song.album))
+        } else {
+            const EXTS: &[&str] = &["mp3", "flac", "m4a", "ogg"];
+            EXTS.iter().find_map(|ext| {
+                let p = cache.cache_path(song_id, ext);
+                if p.exists() { Some(p) } else { None }
+            })
+        };
+
+        tokio::spawn(async move {
+            let path = match cached_path {
+                Some(p) => p,
+                None => {
+                    send_event(
+                        &sender,
+                        crate::event::AppEvent::Toast("未找到文件".into()).into(),
+                    );
+                    return;
+                }
+            };
+
+            match service
+                .upload_song_with_meta(&path, &song.name, &song.album, &song.singer)
+                .await
+            {
+                Ok(result) => {
+                    cache.mark_uploaded(song_id);
+                    log::info!("Uploaded {} (song_id={})", result.song_name, result.song_id);
+                    send_event(
+                        &sender,
+                        NavigationEvent::NavSelect("__download__".into()).into(),
+                    );
+                    send_event(
+                        &sender,
+                        crate::event::AppEvent::Toast(format!("⬆ 上传成功: {}", result.song_name))
+                            .into(),
+                    );
+                }
+                Err(e) => {
+                    log::error!("Upload failed for song_id={song_id}: {e}");
+                    send_event(
+                        &sender,
+                        crate::event::AppEvent::Toast(format!("⬆ 上传失败: {e}")).into(),
+                    );
+                }
+            }
+        });
     }
 }

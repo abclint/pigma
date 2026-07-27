@@ -84,6 +84,7 @@ pub struct NavigationState {
     pub playlist_selected: usize,
     pub search: SearchState,
     pub pagination: Option<PaginationInfo>,
+    pub generation: u64,
     /// Cached rendered rows to avoid per-frame serde serialization.
     /// Invalidated when `content` is replaced.
     pub content_rows_cache: RefCell<Option<Vec<Vec<String>>>>,
@@ -263,8 +264,8 @@ impl App {
 
         Ok(Self {
             config,
-            service,
-            playback: PlaybackEngine::new(tx, api, cache, quality, proxy),
+            service: service.clone(),
+            playback: PlaybackEngine::new(tx, service, cache, quality, proxy),
             state: State {
                 running: true,
                 events,
@@ -284,6 +285,7 @@ impl App {
                     playlist_selected: 0,
                     search: SearchState::default(),
                     pagination: None,
+                    generation: 0,
                     content_rows_cache: RefCell::new(None),
                 },
                 command_panel,

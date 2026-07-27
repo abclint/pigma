@@ -1,9 +1,10 @@
-# 更新日志
+## [0.1.5] - 2026-07-27
 
-本文件记录项目的所有重要变更。
+### 🚀 Features
 
-格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
-本项目遵循 [语义化版本控制](https://semver.org/lang/zh-CN/)。
+- *(navigation)* Add saved albums navigation tab (#18) (AshGrey🥕)
+- 迁移 API 到 service 调用，完善上传、本地音乐云盘及封面缓存，更新贡献指南 (akirco)
+- fixs: 缓存值`accessed_at`始终为0,快速导航时表格内容覆盖
 
 ## [0.1.4] - 2026-07-26
 
@@ -144,3 +145,6 @@
 - 简化稳定版构建的发布目标
 - 修复发布工作流依赖和制品上传
 - 运行 cargo fmt 统一代码风格
+
+
+

@@ -30,6 +30,12 @@ struct CacheEntry {
     filename: String,
     #[serde(default)]
     duration: u64,
+    #[serde(default)]
+    accessed_at: u64,
+    #[serde(default)]
+    pic_url: String,
+    #[serde(default)]
+    uploaded_at: u64,
 }
 
 /// Backward-compatible deserializer: accepts both the old format (plain string)
@@ -49,6 +55,9 @@ where
         Raw::Str(filename) => Ok(CacheEntry {
             filename,
             duration: 0,
+            accessed_at: 0,
+            pic_url: String::new(),
+            uploaded_at: 0,
         }),
         Raw::Obj(entry) => Ok(entry),
     }
@@ -62,6 +71,10 @@ struct CacheEntryWrapper {
     duration: u64,
     #[serde(default)]
     accessed_at: u64,
+    #[serde(default)]
+    pic_url: String,
+    #[serde(default)]
+    uploaded_at: u64,
 }
 
 impl<'de> Deserialize<'de> for CacheEntryWrapper {
@@ -73,7 +86,9 @@ impl<'de> Deserialize<'de> for CacheEntryWrapper {
         Ok(Self {
             filename: entry.filename,
             duration: entry.duration,
-            accessed_at: 0,
+            accessed_at: entry.accessed_at,
+            pic_url: entry.pic_url,
+            uploaded_at: entry.uploaded_at,
         })
     }
 }
@@ -87,6 +102,7 @@ pub struct CacheManager {
     downloads_dir: PathBuf,
     lyrics_dir: PathBuf,
     content_dir: PathBuf,
+    covers_dir: PathBuf,
     template: String,
     index: Arc<RwLock<CacheIndex>>,
     max_cache_bytes: u64,
@@ -97,12 +113,14 @@ impl CacheManager {
     pub fn new(downloads_dir: PathBuf, base_dir: PathBuf, template: String) -> Self {
         let lyrics_dir = base_dir.join("lyrics");
         let content_dir = base_dir.join("content");
+        let covers_dir = base_dir.join("covers");
         let index = Self::load_index_static(&downloads_dir);
         let total = Self::compute_total_bytes(&downloads_dir, &index);
         Self {
             downloads_dir,
             lyrics_dir,
             content_dir,
+            covers_dir,
             template,
             index: Arc::new(RwLock::new(index)),
             max_cache_bytes: DEFAULT_MAX_CACHE_BYTES,
@@ -146,6 +164,19 @@ impl CacheManager {
         if let Err(e) = fs::write(&path, snapshot) {
             log::warn!("Failed to write cache index: {e}");
         }
+    }
+
+    pub fn mark_uploaded(&self, song_id: u64) {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        if let Ok(mut index) = self.index.write()
+            && let Some(entry) = index.get_mut(&song_id)
+        {
+            entry.uploaded_at = now;
+        }
+        self.save_index();
     }
 
     pub fn remove_from_index(&self, song_id: u64) {
@@ -231,7 +262,17 @@ impl CacheManager {
     }
 
     pub fn open_cached(&self, id: u64, ext: &str) -> io::Result<File> {
-        File::open(self.cache_path(id, ext))
+        let file = File::open(self.cache_path(id, ext))?;
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        if let Ok(mut index) = self.index.write()
+            && let Some(entry) = index.get_mut(&id)
+        {
+            entry.accessed_at = now;
+        }
+        Ok(file)
     }
 
     pub fn create_provider(&self, song: &SongInfo, ext: &str) -> io::Result<CacheFileProvider> {
@@ -265,6 +306,8 @@ impl CacheManager {
                     filename,
                     duration: song.duration,
                     accessed_at: now,
+                    pic_url: song.pic_url.clone(),
+                    uploaded_at: 0,
                 },
             );
         self.cached_total_bytes
@@ -335,6 +378,33 @@ impl CacheManager {
         }
     }
 
+    fn cover_path(&self, song_id: u64) -> PathBuf {
+        self.covers_dir.join(format!("{song_id}.jpg"))
+    }
+
+    pub fn load_cover(&self, song_id: u64) -> Option<Vec<u8>> {
+        let path = self.cover_path(song_id);
+        fs::read(path).ok()
+    }
+
+    pub async fn load_cover_async(&self, song_id: u64) -> Option<Vec<u8>> {
+        let path = self.cover_path(song_id);
+        tokio::task::spawn_blocking(move || fs::read(path).ok())
+            .await
+            .ok()
+            .flatten()
+    }
+
+    pub fn save_cover(&self, song_id: u64, data: &[u8]) {
+        if let Err(e) = fs::create_dir_all(&self.covers_dir) {
+            log::warn!("Failed to create covers cache dir: {e}");
+            return;
+        }
+        if let Err(e) = fs::write(self.cover_path(song_id), data) {
+            log::warn!("Failed to write cover cache for {song_id}: {e}");
+        }
+    }
+
     pub fn load_content_cache(&self, api: &str, ttl_secs: u64) -> Option<ContentState> {
         let path = self.content_path(api);
         let data = fs::read_to_string(path).ok()?;
@@ -370,6 +440,11 @@ impl CacheManager {
             let path = self.downloads_dir.join(&entry.filename);
             let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
             let (name, singer) = self.parse_filename(stem, *id);
+            let name = if entry.uploaded_at > 0 {
+                format!("{name} ↑")
+            } else {
+                name
+            };
             songs.push(SongInfo {
                 id: *id,
                 name,
@@ -377,7 +452,7 @@ impl CacheManager {
                 artist_id: 0,
                 album: String::new(),
                 album_id: 0,
-                pic_url: String::new(),
+                pic_url: entry.pic_url.clone(),
                 duration: entry.duration,
                 copyright: ncm_api::SongCopyright::Unknown,
             });

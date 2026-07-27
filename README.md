@@ -12,33 +12,36 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
 
 **升级注意备份配置文件，当前自动备份迁移并没有写**
 
+**[配置参考](./config.example.toml)**
+
 ## Features
 
 - [x] 流式播放，边听边存
 - [x] 低延迟seek
 - [x] 本地音频播放
-- [x] 自定义渲染列表
-- [x] 自定义渲染列
+- [x] 自定义渲染导航列表
+- [x] 自定义渲染内容列表
 - [x] 歌词渐变逐字高亮
 - [x] table标题自定义
-- [x] 最近播放上报
 - [x] 心动模式
 - [x] 数据分页加载(目前仅支持云盘)
 - [x] youtube源fallback(音源评分重写)
+- [x] 歌曲操作(like,dislike,fav .etc)
+- [x] 重构播放队列
+- [x] 下载管理（重合边听边存）
+- [x] 重写playerbar(支持歌曲封面)
+- [x] 云盘上传（缓存文件，本地文件）
+- [ ] bilibili音源
+- [ ] 新增可选歌词页(沉浸式封面+歌词)
+- [ ] command panel重写，更多运行时配置支持
 - [ ] 音量控制
+- [ ] 云盘源作为fallback
+- [ ] 本地音频歌词，元数据重写
 - [ ] landing page
 - [ ] 重构进入程序流程
-- [ ] 歌曲操作(like,dislike,fav .etc)
-- [ ] 重构播放队列
-- [ ] 引入数据库，内存优化
-- [ ] 本地音频歌词，元数据重写
-- [ ] 下载管理（重合边听边存）
-- [ ] 云盘源作为fallback
-- [ ] 云盘上传
 - [ ] 歌手信息
-- [ ] 更多layout支持
-- [ ] 重写playerbar(支持歌曲封面)
-- [ ] table标题自定位置
+- [ ] 行内简易模式
+- [ ] 更多layout支持(导航置顶模式，简易歌曲列表)
 - [ ] ascii art style 歌词
 - [ ] 支持系统包管理器安装
 
@@ -53,7 +56,7 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
   </tr>
   <tr>
     <td><img src="./imgs/image_003.png" width="100%" /></td>
-    <td><img src="./imgs/image_004.png" width="100%" /></td>
+    <td><img src="./imgs/image_005.png" width="100%" /></td>
   </tr>
 </table>
 
@@ -96,20 +99,22 @@ cargo build --release
 ## Usage
 
 
-| 快捷键              |                   描述                   |
-| :------------------ | :--------------------------------------: |
-| tab/shift+tab       |              切换导航                    |
-| enter               |              播放/进入列表               |
-| space               |                   暂停                   |
-| f                   |                 播放队列                 |
-| l                   |                   歌词                   |
-| /                   |                搜索/过滤                 |
-| b                   |                 样式切换                 |
-| left /right         |                 seek 15s                 |
-| shift + left /right |              上一首/下一首               |
-| ctrl+p              |              command panel               |
-| p                   |          切换表格为cell/row模式          |
-| m                   | 切换播放模式（心动模式存在问题，需重写） |
+| 快捷键              |                     描述                     |
+| :------------------ | :------------------------------------------: |
+| ctrl+l              |                 清空播放队列                 |
+| s/d                 |       添加到喜欢/不感兴趣(仅每日推荐)        |
+| tab/shift+tab       |                   切换导航                   |
+| enter               |                播放/进入列表                 |
+| space               |                     暂停                     |
+| f                   |                   播放队列                   |
+| l                   |                     歌词                     |
+| /                   |                  搜索/过滤                   |
+| b                   |                   样式切换                   |
+| left /right         |                   seek 15s                   |
+| shift + left /right |                上一首/下一首                 |
+| ctrl+p              |                command panel                 |
+| p                   |            切换表格为cell/row模式            |
+| m                   | 切换播放模式（适用于我的歌单或我喜欢的音乐） |
 
 
 

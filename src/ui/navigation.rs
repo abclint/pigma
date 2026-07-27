@@ -42,10 +42,12 @@ pub fn draw(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, title: &str,
             }
 
             let prefix = if is_selected && focused { "▶ " } else { "  " };
+            // let suffix = if is_selected && focused { " ◀" } else { "  " };
+
             let item_style = if is_selected && focused {
                 Style::default()
-                    .fg(colors.accent)
-                    .bg(colors.surface)
+                    .fg(colors.surface)
+                    .bg(colors.accent)
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(colors.text)
@@ -55,6 +57,7 @@ pub fn draw(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, title: &str,
             let mut spans = Vec::with_capacity(name_spans.len() + 1);
             spans.push(Span::styled(prefix, item_style));
             spans.extend(name_spans);
+            // spans.push(Span::styled(suffix, item_style));
 
             list_items.push(ListItem::new(Line::from(spans)).style(item_style));
             current_global_row += 1;

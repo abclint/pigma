@@ -1,17 +1,18 @@
 use std::sync::{Arc, Mutex};
 
-use ncm_api::{NcmClient, NcmError, SongInfo, SongQuality};
+use ncm_api::{NcmError, SongInfo, SongQuality};
 use stream_download::{Settings, StreamDownload};
 use y7dl::Client;
 
 use super::player::{AudioInput, SharedReader};
 use crate::cache::CacheManager;
+use crate::service::ApiService;
 use crate::utils::youtube::{clean_search_query, parse_duration_str, score_match};
 
 /// Resolves audio inputs for songs via local files, NCM streaming, or YouTube fallback.
 #[derive(Clone)]
 pub struct AudioSource {
-    api: Arc<NcmClient>,
+    service: ApiService,
     pub cache: CacheManager,
     quality: SongQuality,
     y7dl: Arc<Client>,
@@ -19,7 +20,7 @@ pub struct AudioSource {
 
 impl AudioSource {
     pub fn new(
-        api: Arc<NcmClient>,
+        service: ApiService,
         cache: CacheManager,
         quality: SongQuality,
         proxy: String,
@@ -30,7 +31,7 @@ impl AudioSource {
             Client::with_proxy(&proxy)
         };
         Self {
-            api,
+            service,
             cache,
             quality,
             y7dl: Arc::new(y7dl_client),
@@ -130,7 +131,7 @@ impl AudioSource {
 
     /// Try to resolve a song from NCM streaming.
     async fn resolve_ncm(&self, song: &SongInfo) -> Result<AudioInput, String> {
-        let urls = self.api.songs_url_v1(&[song.id], self.quality).await;
+        let urls = self.service.fetch_song_urls(&[song.id], self.quality).await;
 
         let urls = match urls {
             Ok(u) => u,
