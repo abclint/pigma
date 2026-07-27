@@ -76,6 +76,11 @@ impl Default for NavConfig {
                             title_template: None,
                         },
                         NavItemConfig {
+                            name: " 我收藏的专辑".into(),
+                            api: Some("album_sublist".into()),
+                            title_template: None,
+                        },
+                        NavItemConfig {
                             name: " 下载管理".into(),
                             api: Some("__download__".into()),
                             title_template: None,

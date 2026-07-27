@@ -10,6 +10,7 @@ pub enum ApiEndpoint {
     UserSongList,
     UserCreatedSongList,
     UserSubscribedSongList,
+    SavedAlbums,
     Download,
     LocalMusic,
     Recent,
@@ -29,6 +30,7 @@ impl ApiEndpoint {
         ApiEndpoint::UserSongList,
         ApiEndpoint::UserCreatedSongList,
         ApiEndpoint::UserSubscribedSongList,
+        ApiEndpoint::SavedAlbums,
         ApiEndpoint::Download,
         ApiEndpoint::LocalMusic,
         ApiEndpoint::Recent,
@@ -48,6 +50,7 @@ impl ApiEndpoint {
             ApiEndpoint::UserSongList => "user_song_list",
             ApiEndpoint::UserCreatedSongList => "user_created_song_list",
             ApiEndpoint::UserSubscribedSongList => "user_subscribed_song_list",
+            ApiEndpoint::SavedAlbums => "album_sublist",
             ApiEndpoint::Download => "__download__",
             ApiEndpoint::LocalMusic => "__local_music__",
             ApiEndpoint::Recent => "__recent__",
@@ -68,6 +71,7 @@ impl ApiEndpoint {
             "user_song_list" => Some(ApiEndpoint::UserSongList),
             "user_created_song_list" => Some(ApiEndpoint::UserCreatedSongList),
             "user_subscribed_song_list" => Some(ApiEndpoint::UserSubscribedSongList),
+            "album_sublist" => Some(ApiEndpoint::SavedAlbums),
             "__download__" => Some(ApiEndpoint::Download),
             "__local_music__" => Some(ApiEndpoint::LocalMusic),
             "__recent__" => Some(ApiEndpoint::Recent),
@@ -84,6 +88,7 @@ impl ApiEndpoint {
                 | ApiEndpoint::UserSongList
                 | ApiEndpoint::UserCreatedSongList
                 | ApiEndpoint::UserSubscribedSongList
+                | ApiEndpoint::SavedAlbums
         )
     }
 }
