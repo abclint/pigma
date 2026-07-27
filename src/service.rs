@@ -100,6 +100,10 @@ impl ApiService {
                 },
                 None => (ContentState::Error("未登录".into()), None),
             },
+            ApiEndpoint::SavedAlbums => match self.client.album_sublist(0, limit).await {
+                Ok(albums) => (ContentState::SongLists(albums), None),
+                Err(e) => (ContentState::Error(e.to_string()), None),
+            },
             ApiEndpoint::Search => match self.client.search_hot().await {
                 Ok(items) => (
                     ContentState::HotSearch(items.into_iter().map(|h| h.keyword).collect()),

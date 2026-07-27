@@ -66,11 +66,10 @@ impl App {
     }
 
     pub(super) fn handle_playlist_select(&mut self, id: u64, name: Option<String>) {
-        self.playback.set_playlist_id(id);
         self.state.navigation.push_breadcrumb();
         self.state.navigation.set_content(ContentState::Loading);
 
-        let is_radio = self
+        let selected_api = self
             .state
             .navigation
             .nav
@@ -82,13 +81,23 @@ impl App {
                     .items
                     .get(i)
             })
-            .and_then(|item| item.api.as_deref())
-            == Some("user_radio_sublist");
+            .and_then(|item| item.api.as_deref());
+
+        let is_album = selected_api == Some("album_sublist");
+        let is_radio = selected_api == Some("user_radio_sublist");
+
+        if !is_album {
+            self.playback.set_playlist_id(id);
+        }
 
         let service = self.service.clone();
         let sender = self.state.events.sender();
         tokio::spawn(async move {
-            let (state, detail_name) = service.load_playlist_detail(id, is_radio).await;
+            let (state, detail_name) = if is_album {
+                (service.load_album(id).await, None)
+            } else {
+                service.load_playlist_detail(id, is_radio).await
+            };
             send_event(&sender, NavigationEvent::ContentLoaded(state).into());
             let breadcrumb = detail_name.or(name);
             if let Some(name) = breadcrumb {
