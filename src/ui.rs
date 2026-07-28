@@ -62,33 +62,11 @@ pub fn render_scrollbar(f: &mut Frame, total: usize, selected: usize, area: rata
 }
 
 /// Render a title template with `{name}` and `{count}` placeholders.
-pub fn render_title<'a>(template: &'a str, name: &str, count: usize) -> std::borrow::Cow<'a, str> {
+pub fn render_title(template: &str, name: &str, count: usize) -> String {
     if !template.contains('{') {
-        return std::borrow::Cow::Borrowed(template);
+        return template.to_owned();
     }
-    let mut result = String::with_capacity(template.len() + name.len() + 8);
-    let mut chars = template.char_indices().peekable();
-    while let Some((i, ch)) = chars.next() {
-        if ch == '{' {
-            if template[i..].starts_with("{name}") {
-                result.push_str(name);
-                for _ in 0..("{name}".len() - 1) {
-                    chars.next();
-                }
-            } else if template[i..].starts_with("{count}") {
-                use std::fmt::Write;
-                let _ = write!(result, "{count}");
-                for _ in 0..("{count}".len() - 1) {
-                    chars.next();
-                }
-            } else {
-                result.push(ch);
-            }
-        } else {
-            result.push(ch);
-        }
-    }
-    std::borrow::Cow::Owned(result)
+    template.replace("{name}", name).replace("{count}", &count.to_string())
 }
 
 pub fn draw(f: &mut Frame, app: &mut App) {

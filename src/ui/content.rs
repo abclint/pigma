@@ -88,7 +88,7 @@ fn compute_rows(content: &ContentState, columns: &[ColumnDef]) -> Vec<Vec<String
         ContentState::Songs(songs) => build_rows(songs, columns, song_field),
         ContentState::SongLists(lists) => build_rows(lists, columns, songlist_field),
         ContentState::TopLists(lists) => build_rows(lists, columns, toplist_field),
-        ContentState::HotSearch(keywords) => build_rows(keywords, columns, |kw, field| {
+        ContentState::HotSearch(keywords) => build_rows(&keywords.0, columns, |kw, field| {
             if field == "keyword" {
                 Some(Cow::Borrowed(kw.as_str()))
             } else {

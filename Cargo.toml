@@ -62,8 +62,7 @@ tokio = {
     "time",
   ]
 }
-toml = "1.1.3"
-toml_edit = "0.25.13"
+toml_edit = { version = "0.25.13", features = ["serde"] }
 unicode-width = "0.2.2"
 url = "2.5.8"
 y7dl = { path = "crates/y7dl" }

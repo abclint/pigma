@@ -15,7 +15,7 @@ pub use titles::*;
 use serde::{Deserialize, Serialize};
 use std::fs;
 
-use crate::logger::Logger;
+use crate::{logger::Logger, utils};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -125,66 +125,6 @@ impl Default for Config {
     }
 }
 
-fn fix_spacing(s: &str) -> String {
-    s.lines()
-        .map(|line| {
-            if let Some(idx) = line.find("= ") {
-                let key = &line[..idx];
-                if !key.ends_with(' ') && !key.is_empty() {
-                    return format!("{} = {}", key, &line[idx + 2..]);
-                }
-            }
-            line.to_string()
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn inline_items(table: &mut toml_edit::Table) {
-    if let Some(toml_edit::Item::ArrayOfTables(aot)) = table.remove("items") {
-        let mut arr = toml_edit::Array::new();
-        for tbl in aot {
-            let mut inline = toml_edit::InlineTable::new();
-            for (k, v) in tbl.iter() {
-                if let toml_edit::Item::Value(val) = v {
-                    inline.insert(k, val.clone());
-                }
-            }
-            arr.push(toml_edit::Value::InlineTable(inline));
-        }
-        table.insert(
-            "items",
-            toml_edit::Item::Value(toml_edit::Value::Array(arr)),
-        );
-    }
-}
-
-fn convert_items_to_inline(item: &mut toml_edit::Item) {
-    match item {
-        toml_edit::Item::Table(table) => {
-            let keys: Vec<String> = table.iter().map(|(k, _)| k.to_string()).collect();
-            for key in &keys {
-                if let Some(child) = table.get_mut(key.as_str()) {
-                    convert_items_to_inline(child);
-                }
-            }
-            inline_items(table);
-        }
-        toml_edit::Item::ArrayOfTables(aot) => {
-            for tbl in aot.iter_mut() {
-                inline_items(tbl);
-                let keys: Vec<String> = tbl.iter().map(|(k, _)| k.to_string()).collect();
-                for key in &keys {
-                    if let Some(child) = tbl.get_mut(key.as_str()) {
-                        convert_items_to_inline(child);
-                    }
-                }
-            }
-        }
-        _ => {}
-    }
-}
-
 impl Config {
     pub fn load() -> Self {
         let config_dir = dirs::config_dir().map(|d| d.join("pigma"));
@@ -194,7 +134,7 @@ impl Config {
         let config = if let Some(path) = &config_path {
             if path.exists() {
                 match fs::read_to_string(path) {
-                    Ok(content) => match toml::from_str(&content) {
+                    Ok(content) => match toml_edit::de::from_str(&content) {
                         Ok(cfg) => cfg,
                         Err(e) => {
                             log::warn!("Failed to parse config.toml: {e}, using defaults");
@@ -239,13 +179,35 @@ impl Config {
     }
 
     fn to_toml(&self) -> String {
-        let pretty =
-            toml::to_string_pretty(self).expect("Config should always serialize to valid TOML");
-        let mut doc: toml_edit::DocumentMut = pretty
-            .parse()
-            .expect("toml::to_string_pretty should produce valid TOML");
-        doc.fmt();
-        convert_items_to_inline(doc.as_item_mut());
-        fix_spacing(&doc.to_string())
+        let mut doc = toml_edit::ser::to_string_pretty(self)
+            .unwrap()
+            .parse::<toml_edit::DocumentMut>()
+            .unwrap();
+        // navigation 设为隐式
+        doc["navigation"].as_table_mut().unwrap().set_implicit(true);
+
+        // 遍历每个 section，把 items 转为内联表数组
+        let sections = doc["navigation"]["sections"]
+            .as_array_of_tables_mut()
+            .unwrap();
+
+        for section in sections.iter_mut() {
+            utils::format::convert_aot_to_inline(section, "items", "\n  ");
+        }
+
+        let columns = doc["columns"].as_table_mut().unwrap();
+        columns.set_implicit(true);
+
+        let overrides = columns["overrides"].as_table_mut().unwrap();
+        overrides.set_implicit(true);
+
+        utils::format::convert_all_aot_to_inline(overrides, "\n  ");
+
+        let columns = doc["columns"].as_table_mut().unwrap();
+        utils::format::convert_aot_to_inline(columns, "songs", "\n  ");
+        utils::format::convert_aot_to_inline(columns, "songlist", "\n  ");
+        columns.set_implicit(true);
+
+        doc.to_string()
     }
 }

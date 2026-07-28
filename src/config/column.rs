@@ -27,110 +27,16 @@ pub enum ContentType {
 ///     { header = "作者", field = "author", width = 16 },
 /// ]
 /// ```
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ColumnDef {
     pub header: String,
     pub field: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub width: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_width: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ratio: Option<(u32, u32)>,
-}
-
-impl Serialize for ColumnDef {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        use serde::ser::SerializeMap;
-        let n = 3
-            + usize::from(self.width.is_some())
-            + usize::from(self.min_width.is_some())
-            + usize::from(self.ratio.is_some());
-        let mut map = serializer.serialize_map(Some(n))?;
-        map.serialize_entry("header", &self.header)?;
-        map.serialize_entry("field", &self.field)?;
-        if let Some(v) = self.width {
-            map.serialize_entry("width", &v)?;
-        }
-        if let Some(v) = self.min_width {
-            map.serialize_entry("min_width", &v)?;
-        }
-        if let Some(v) = &self.ratio {
-            map.serialize_entry("ratio", v)?;
-        }
-        map.end()
-    }
-}
-
-impl<'de> Deserialize<'de> for ColumnDef {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        use serde::de::{self, MapAccess, Visitor};
-        use std::fmt;
-
-        struct ColumnDefVisitor;
-
-        impl<'de> Visitor<'de> for ColumnDefVisitor {
-            type Value = ColumnDef;
-
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("a column definition map")
-            }
-
-            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
-                let mut header = None;
-                let mut field = None;
-                let mut width = None;
-                let mut min_width = None;
-                let mut ratio = None;
-
-                while let Some(key) = map.next_key::<String>()? {
-                    match key.as_str() {
-                        "header" => header = Some(map.next_value()?),
-                        "field" => field = Some(map.next_value()?),
-                        "width" => width = Some(map.next_value()?),
-                        "min_width" => min_width = Some(map.next_value()?),
-                        "ratio" => ratio = Some(map.next_value()?),
-                        _ => {
-                            let _ = map.next_value::<de::IgnoredAny>()?;
-                        }
-                    }
-                }
-
-                let header = header.ok_or_else(|| de::Error::missing_field("header"))?;
-                let field = field.ok_or_else(|| de::Error::missing_field("field"))?;
-
-                Ok(ColumnDef {
-                    header,
-                    field,
-                    width,
-                    min_width,
-                    ratio,
-                })
-            }
-        }
-
-        deserializer.deserialize_map(ColumnDefVisitor)
-    }
-}
-
-impl std::fmt::Debug for ColumnDef {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ColumnDef")
-            .field("header", &self.header)
-            .field("field", &self.field)
-            .field("width", &self.width)
-            .field("min_width", &self.min_width)
-            .field("ratio", &self.ratio)
-            .finish()
-    }
-}
-
-impl Clone for ColumnDef {
-    fn clone(&self) -> Self {
-        Self {
-            header: self.header.clone(),
-            field: self.field.clone(),
-            width: self.width,
-            min_width: self.min_width,
-            ratio: self.ratio,
-        }
-    }
 }
 
 impl ColumnDef {

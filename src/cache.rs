@@ -7,7 +7,8 @@ use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ncm_api::SongInfo;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::ser::SerializeMap;
 use stream_download::storage::StorageProvider;
 
 use crate::state::ContentState;
@@ -25,73 +26,86 @@ struct ContentCacheEntryRef<'a> {
 }
 
 /// Entry in the audio cache index, mapping song ID to filename and duration.
-#[derive(Clone, Serialize, Deserialize)]
+///
+/// # Backward compatibility
+/// The custom [`Deserialize`] impl accepts both the old format (a plain filename string)
+/// and the current structured format ({filename, duration, …}), so old cache indices
+/// survive upgrades without manual migration.
+#[derive(Clone)]
 struct CacheEntry {
     filename: String,
-    #[serde(default)]
     duration: u64,
-    #[serde(default)]
     accessed_at: u64,
-    #[serde(default)]
     pic_url: String,
-    #[serde(default)]
     uploaded_at: u64,
 }
 
-/// Backward-compatible deserializer: accepts both the old format (plain string)
-/// and the new format (object with filename + duration).
-fn deserialize_cache_entry<'de, D>(deserializer: D) -> Result<CacheEntry, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum Raw {
-        Str(String),
-        Obj(CacheEntry),
-    }
-
-    match Raw::deserialize(deserializer)? {
-        Raw::Str(filename) => Ok(CacheEntry {
-            filename,
-            duration: 0,
-            accessed_at: 0,
-            pic_url: String::new(),
-            uploaded_at: 0,
-        }),
-        Raw::Obj(entry) => Ok(entry),
+impl Serialize for CacheEntry {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let n = 2 + usize::from(self.accessed_at > 0)
+            + usize::from(!self.pic_url.is_empty())
+            + usize::from(self.uploaded_at > 0);
+        let mut map = serializer.serialize_map(Some(n))?;
+        map.serialize_entry("filename", &self.filename)?;
+        map.serialize_entry("duration", &self.duration)?;
+        if self.accessed_at > 0 {
+            map.serialize_entry("accessed_at", &self.accessed_at)?;
+        }
+        if !self.pic_url.is_empty() {
+            map.serialize_entry("pic_url", &self.pic_url)?;
+        }
+        if self.uploaded_at > 0 {
+            map.serialize_entry("uploaded_at", &self.uploaded_at)?;
+        }
+        map.end()
     }
 }
 
-type CacheIndex = HashMap<u64, CacheEntryWrapper>;
-
-#[derive(Clone, Serialize)]
-struct CacheEntryWrapper {
-    filename: String,
-    duration: u64,
-    #[serde(default)]
-    accessed_at: u64,
-    #[serde(default)]
-    pic_url: String,
-    #[serde(default)]
-    uploaded_at: u64,
-}
-
-impl<'de> Deserialize<'de> for CacheEntryWrapper {
+impl<'de> Deserialize<'de> for CacheEntry {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        let entry = deserialize_cache_entry(deserializer)?;
-        Ok(Self {
-            filename: entry.filename,
-            duration: entry.duration,
-            accessed_at: entry.accessed_at,
-            pic_url: entry.pic_url,
-            uploaded_at: entry.uploaded_at,
-        })
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Raw {
+            Str(String),
+            Obj(CacheEntryObj),
+        }
+
+        #[derive(Deserialize)]
+        struct CacheEntryObj {
+            filename: String,
+            #[serde(default)]
+            duration: u64,
+            #[serde(default)]
+            accessed_at: u64,
+            #[serde(default)]
+            pic_url: String,
+            #[serde(default)]
+            uploaded_at: u64,
+        }
+
+        match Raw::deserialize(deserializer)? {
+            Raw::Str(filename) => Ok(CacheEntry {
+                filename,
+                duration: 0,
+                accessed_at: 0,
+                pic_url: String::new(),
+                uploaded_at: 0,
+            }),
+            Raw::Obj(obj) => Ok(CacheEntry {
+                filename: obj.filename,
+                duration: obj.duration,
+                accessed_at: obj.accessed_at,
+                pic_url: obj.pic_url,
+                uploaded_at: obj.uploaded_at,
+            }),
+        }
     }
 }
+
+type CacheIndex = HashMap<u64, CacheEntry>;
 
 /// Default maximum cache size in bytes (2 GB).
 const DEFAULT_MAX_CACHE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
@@ -302,7 +316,7 @@ impl CacheManager {
             .unwrap_or_else(|e| e.into_inner())
             .insert(
                 song.id,
-                CacheEntryWrapper {
+                CacheEntry {
                     filename,
                     duration: song.duration,
                     accessed_at: now,
