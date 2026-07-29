@@ -56,11 +56,11 @@ pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> color_eyre::Resu
     main::handle_main_key(app, key_event)
 }
 
-pub fn handle_mouse_event(app: &mut App, kind: MouseEventKind) {
+pub fn handle_mouse_event(app: &mut App, kind: MouseEventKind, col: u16, row: u16) {
     if app.state.command_panel.open {
         command::handle_command_mouse(app, kind);
         return;
     }
 
-    main::handle_main_mouse(app, kind);
+    main::handle_main_mouse(app, kind, col, row);
 }

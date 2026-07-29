@@ -101,7 +101,7 @@ impl App {
                     input::handle_key_events(self, key)?
                 }
                 CrosstermEvent::Mouse(mouse) => {
-                    input::handle_mouse_event(self, mouse.kind);
+                    input::handle_mouse_event(self, mouse.kind, mouse.column, mouse.row);
                 }
                 _ => {}
             },

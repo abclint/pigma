@@ -34,10 +34,11 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
 - [x] 下载管理（重合边听边存）
 - [x] 重写playerbar(支持歌曲封面)
 - [x] 云盘上传（缓存文件，本地文件）
+- [x] 音量控制
+- [ ] styled_text标记语法嵌套
 - [ ] bilibili音源
 - [ ] 新增可选歌词页(沉浸式封面+歌词)
 - [ ] command panel重写，更多运行时配置支持
-- [ ] 音量控制
 - [ ] 云盘源作为fallback
 - [ ] 本地音频歌词，元数据重写
 - [ ] landing page
@@ -131,9 +132,6 @@ Config file location: `~/.config/pigma/config.toml`
 
 Each content type has two levels of columns: **type-defaults** and **per-API overrides**.
 
-下面两种写法在 TOML 中等价，**手写时均可使用**：
-
-**写法一：内联数组（紧凑）**
 
 ```toml
 [columns]
@@ -158,56 +156,6 @@ search = [
 ]
 ```
 
-**写法二：数组-of-tables（程序保存时采用此格式）**
-
-```toml
-[[columns.songs]]
-header = "TITLE"
-field = "name"
-min_width = 18
-
-[[columns.songs]]
-header = "ARTIST"
-field = "singer"
-width = 16
-
-[[columns.songs]]
-header = "ALBUM"
-field = "album"
-min_width = 12
-
-[[columns.songs]]
-header = "DURATION"
-field = "duration"
-width = 9
-
-[[columns.songlist]]
-header = "NAME"
-field = "name"
-min_width = 20
-
-[[columns.songlist]]
-header = "AUTHOR"
-field = "author"
-width = 16
-
-[[columns.overrides.toplist]]
-header = "NAME"
-field = "name"
-width = 20
-
-[[columns.overrides.toplist]]
-header = "DESCRIPTION"
-field = "description"
-min_width = 20
-
-[[columns.overrides.search]]
-header = "HOT SEARCH"
-field = "keyword"
-min_width = 1
-```
-
-两种写法均可被程序正确读取；`save()` 时统一以「写法二」写回磁盘。
 
 #### Column width types
 
@@ -311,7 +259,7 @@ Any API endpoint can have a `[columns.overrides.{key}]` entry. Available keys:
 | `__recent__`         | songs        | 最近播放           |
 | `top_singers`        | singers      | 热门歌手           |
 | `search`             | songs        | 搜索-热搜榜        |
-| `__download__`       | —            | 下载管理（未实现） |
+| `__download__`       | —            | 下载管理           |
 
 ### Title templates
 
@@ -328,11 +276,34 @@ lyrics = "\u266a LYRICS"
 
 ```toml
 [playerbar]
+# 播放栏布局: "default", "modern", "minimal"
+layout = "modern"
+
+# 进度条填充符号
 filled_symbol = "━"
+# 进度条未填充符号
 unfilled_symbol = "─"
-filled_color = "accent"                        # theme field name for progress
-unfilled_color = "muted"                       # theme field name for track (uncached)
-unfilled_color_cached = "highlight"            # theme field name for track (cached)
+# 进度条填充颜色 (颜色名或 hex)
+filled_color = "accent"
+# 进度条未填充颜色
+unfilled_color = "text"
+# 已缓存到本地时进度条轨道颜色
+unfilled_color_cached = "warning"
+# 是否启用进度条渐变效果
+gradient_enabled = false
+# 渐变预设: "warm", "cool", "sunset", "ocean", "forest", "neon", "pastel", "rainbow"
+gradient_preset = "warm"
+
+# 播放栏各组件可见性(建议暂时别用，音量控制没写好)
+[playerbar.visible]
+# 是否显示封面
+cover = true
+# 是否显示音量控制
+volume = true
+# 是否显示播放模式图标
+mode_icon = true
+# 是否显示加载动画
+spinner = true
 ```
 
 Supported theme color names: `bg`, `surface`, `text`, `accent`, `highlight`, `muted`, `error`, `warning`.
@@ -373,6 +344,25 @@ are styled by the active theme:
 | -------------------- | ------------ |
 | `<accent>…</accent>` | Accent color |
 | `<b>…</b>`           | Bold         |
+
+
+**支持的标记语法**
+
+> 标记语法不限于导航列表，表格block title,表格标题,暂不支持嵌套
+
+```rs
+/// Parse `<tag>text</tag>` markup into styled `Vec<Span>`.
+///
+/// Supported tags:
+/// - Theme colors: `<accent>`, `<text>`, `<muted>`, `<error>`, `<warning>`, `<highlight>`, `<bg>`, `<surface>`
+/// - Modifiers: `<b>` (bold), `<i>` (italic), `<dim>` (dimmed)
+/// - Literal colors: `<#rrggbb>`, or any name accepted by `ratatui::style::Color::from_str`
+/// - Gradient: `<gradient:preset>text</gradient>` or `<grad:preset>text</grad>` (per-char gradient coloring)
+///   Presets: warm, cubehelix, rainbow, turbo, spectral, viridis
+///
+/// Text without tags is rendered as plain spans with no styling.
+```
+
 
 Example (the default):
 

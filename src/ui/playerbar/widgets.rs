@@ -13,8 +13,8 @@ use crate::playback::types::PlayMode;
 use crate::state::PlaybackState;
 use crate::ui::gradient_line_gauge::GradientLineGauge;
 use crate::ui::spinner::Spinner;
-use crate::utils::GradientPreset;
 use crate::utils::format_duration_into;
+use crate::utils::time::format_duration;
 
 pub fn mode_icon(mode: &PlayMode) -> (&str, &str) {
     match mode {
@@ -30,7 +30,7 @@ pub fn draw_song_info(f: &mut Frame, player: &PlaybackState, colors: &Theme, are
     if let Some(song) = &player.current_song {
         let info_lines = vec![
             Line::from(vec![
-                Span::styled(" \u{266a} ", Style::default().fg(colors.accent)),
+                Span::styled("\u{266a} ", Style::default().fg(colors.accent)),
                 Span::styled(
                     &song.name,
                     Style::default()
@@ -38,7 +38,7 @@ pub fn draw_song_info(f: &mut Frame, player: &PlaybackState, colors: &Theme, are
                         .add_modifier(Modifier::BOLD),
                 ),
             ]),
-            Line::from(format!("   {} ◈  {}", song.singer, song.album))
+            Line::from(format!("{} ◈  {}", song.singer, song.album))
                 .style(Style::default().fg(colors.muted)),
         ];
         f.render_widget(Paragraph::new(info_lines), area);
@@ -55,7 +55,6 @@ pub fn draw_controls(f: &mut Frame, player: &PlaybackState, colors: &Theme, area
         "\u{23f8}"
     };
     let controls = Line::from(vec![
-        Span::raw("       "),
         Span::styled("\u{23ee}", Style::default().fg(colors.muted)),
         Span::raw("   "),
         Span::styled(
@@ -66,7 +65,6 @@ pub fn draw_controls(f: &mut Frame, player: &PlaybackState, colors: &Theme, area
         ),
         Span::raw("   "),
         Span::styled("\u{23ed}", Style::default().fg(colors.muted)),
-        Span::raw("       "),
     ])
     .alignment(Alignment::Center);
     f.render_widget(Paragraph::new(controls), area);
@@ -99,7 +97,9 @@ pub fn draw_current_time(f: &mut Frame, player: &PlaybackState, colors: &Theme, 
         let mut buf = String::with_capacity(8);
         format_duration_into(cur_ms, &mut buf);
         f.render_widget(
-            Paragraph::new(buf).style(Style::default().fg(colors.text)),
+            Paragraph::new(buf)
+                .style(Style::default().fg(colors.text))
+                .alignment(Alignment::Right),
             area,
         );
     }
@@ -110,7 +110,9 @@ pub fn draw_total_time(f: &mut Frame, player: &PlaybackState, colors: &Theme, ar
         let mut buf = String::with_capacity(8);
         format_duration_into(song.duration, &mut buf);
         f.render_widget(
-            Paragraph::new(buf).style(Style::default().fg(colors.text)),
+            Paragraph::new(buf)
+                .style(Style::default().fg(colors.text))
+                .alignment(Alignment::Right),
             area,
         );
     }
@@ -133,14 +135,15 @@ pub fn draw_gauge_bar(
         pb.unfilled_color.as_str()
     };
 
+    let ratio = player.progress.clamp(0.0, 1.0);
+
     if pb.gradient_enabled {
-        let gauge =
-            GradientLineGauge::new(GradientPreset::from_str_or_rainbow(&pb.gradient_preset))
-                .ratio(player.progress.clamp(0.0, 1.0))
-                .label(Line::from(""))
-                .filled_symbol(&pb.filled_symbol)
-                .unfilled_symbol(&pb.unfilled_symbol)
-                .unfilled_style(Style::default().fg(colors.field_color(unfilled_color)));
+        let gauge = GradientLineGauge::new(pb.gradient_preset)
+            .ratio(ratio)
+            .label(Line::from(""))
+            .filled_symbol(&pb.filled_symbol)
+            .unfilled_symbol(&pb.unfilled_symbol)
+            .unfilled_style(Style::default().fg(colors.field_color(unfilled_color)));
         f.render_widget(gauge, area);
     } else {
         let gauge = LineGauge::default()
@@ -148,7 +151,9 @@ pub fn draw_gauge_bar(
             .unfilled_symbol(&pb.unfilled_symbol)
             .filled_style(Style::default().fg(colors.field_color(&pb.filled_color)))
             .unfilled_style(Style::default().fg(colors.field_color(unfilled_color)))
-            .ratio(player.progress.clamp(0.0, 1.0));
+            .label("")
+            .ratio(ratio);
+
         f.render_widget(gauge, area);
     }
 }
@@ -160,16 +165,21 @@ pub fn draw_gauge_with_label(
     pb: &PlayerbarConfig,
     area: Rect,
 ) {
-    let Some(song) = &player.current_song else {
-        return;
+    let time_buf = if let Some(song) = &player.current_song {
+        let cur_ms = (player.progress * song.duration as f64) as u64;
+        let mut buf = String::with_capacity(16);
+        format_duration_into(cur_ms, &mut buf);
+        buf.push_str(" / ");
+        buf.push_str(&format_duration(song.duration));
+        buf
+    } else {
+        "00:00 / 00:00".into()
     };
-
-    let cur_ms = (player.progress * song.duration as f64) as u64;
-    let mut time_buf = String::with_capacity(16);
-    format_duration_into(cur_ms, &mut time_buf);
-    use std::fmt::Write;
-    let _ = write!(time_buf, " / ");
-    format_duration_into(song.duration, &mut time_buf);
+    let ratio = if player.current_song.is_some() {
+        player.progress.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
 
     let unfilled_color = if player.cached {
         pb.unfilled_color_cached.as_str()
@@ -178,16 +188,15 @@ pub fn draw_gauge_with_label(
     };
 
     if pb.gradient_enabled {
-        let gauge =
-            GradientLineGauge::new(GradientPreset::from_str_or_rainbow(&pb.gradient_preset))
-                .ratio(player.progress.clamp(0.0, 1.0))
-                .label(Line::from(Span::styled(
-                    time_buf,
-                    Style::default().fg(colors.text),
-                )))
-                .filled_symbol(&pb.filled_symbol)
-                .unfilled_symbol(&pb.unfilled_symbol)
-                .unfilled_style(Style::default().fg(colors.field_color(unfilled_color)));
+        let gauge = GradientLineGauge::new(pb.gradient_preset)
+            .ratio(ratio)
+            .label(Line::from(Span::styled(
+                time_buf,
+                Style::default().fg(colors.text),
+            )))
+            .filled_symbol(&pb.filled_symbol)
+            .unfilled_symbol(&pb.unfilled_symbol)
+            .unfilled_style(Style::default().fg(colors.field_color(unfilled_color)));
         f.render_widget(gauge, area);
     } else {
         let gauge = LineGauge::default()
@@ -195,7 +204,7 @@ pub fn draw_gauge_with_label(
             .unfilled_symbol(&pb.unfilled_symbol)
             .filled_style(Style::default().fg(colors.field_color(&pb.filled_color)))
             .unfilled_style(Style::default().fg(colors.field_color(unfilled_color)))
-            .ratio(player.progress.clamp(0.0, 1.0))
+            .ratio(ratio)
             .label(Span::styled(time_buf, Style::default().fg(colors.text)));
         f.render_widget(gauge, area);
     }
@@ -208,30 +217,23 @@ pub fn draw_song_detail(f: &mut Frame, player: &PlaybackState, colors: &Theme, a
         f.render_widget(Paragraph::new(detail), area);
     }
 }
-// todo: 重写
-#[allow(dead_code)]
 pub fn draw_volume(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
-    let vol = player.volume;
-    let vol_percent = (vol * 100.0) as u16;
-
-    let icon = if vol == 0.0 {
+    let icon = if player.volume <= 0.30 {
         ""
-    } else if vol < 0.5 {
+    } else if player.volume <= 0.60 {
         ""
     } else {
         ""
     };
 
-    let line = Line::from(vec![
-        Span::styled(icon, Style::default().fg(colors.text)),
-        Span::raw(" "),
-        Span::styled(
-            format!("{}%", vol_percent),
-            Style::default().fg(colors.muted),
-        ),
-    ]);
-
-    f.render_widget(Paragraph::new(line).alignment(Alignment::Right), area);
+    f.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            icon,
+            Style::default().fg(colors.accent),
+        )))
+        .alignment(Alignment::Right),
+        area,
+    );
 }
 
 pub fn draw_cover(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {

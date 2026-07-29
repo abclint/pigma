@@ -172,7 +172,7 @@ impl CacheManager {
     fn save_index(&self) {
         let snapshot = {
             let index = self.index.read().unwrap_or_else(|e| e.into_inner());
-            serde_json::to_string_pretty(&*index).unwrap_or_default()
+            serde_json::to_string(&*index).unwrap_or_default()
         };
         let path = Self::index_path(&self.downloads_dir);
         if let Err(e) = fs::write(&path, snapshot) {
@@ -210,27 +210,47 @@ impl CacheManager {
     }
 
     fn sanitize_filename(s: &str) -> String {
+        let s = s.trim();
         s.chars()
             .map(|c| match c {
                 '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
                 _ => c,
             })
-            .collect::<String>()
-            .trim()
-            .to_string()
+            .collect()
     }
 
     fn resolve_filename(&self, song: &SongInfo, ext: &str) -> String {
         if self.template == "{id}" {
-            return format!("{}.{}", song.id, ext);
+            use std::fmt::Write;
+            let mut out = String::with_capacity(16 + ext.len());
+            let _ = write!(out, "{}.{}", song.id, ext);
+            return out;
         }
-        let name = self
-            .template
-            .replace("{id}", &song.id.to_string())
-            .replace("{name}", &Self::sanitize_filename(&song.name))
-            .replace("{singer}", &Self::sanitize_filename(&song.singer))
-            .replace("{album}", &Self::sanitize_filename(&song.album));
-        format!("{}.{}", name, ext)
+        let mut out = String::with_capacity(self.template.len() + ext.len() + 16);
+        let mut rest = self.template.as_str();
+        while let Some(pos) = rest.find('{') {
+            out.push_str(&rest[..pos]);
+            let end = rest[pos..]
+                .find('}')
+                .map(|e| pos + e + 1)
+                .unwrap_or(rest.len());
+            let placeholder = &rest[pos..end];
+            match placeholder {
+                "{id}" => {
+                    use std::fmt::Write;
+                    let _ = write!(out, "{}", song.id);
+                }
+                "{name}" => out.push_str(&Self::sanitize_filename(&song.name)),
+                "{singer}" => out.push_str(&Self::sanitize_filename(&song.singer)),
+                "{album}" => out.push_str(&Self::sanitize_filename(&song.album)),
+                other => out.push_str(other),
+            }
+            rest = &rest[end..];
+        }
+        out.push_str(rest);
+        out.push('.');
+        out.push_str(ext);
+        out
     }
 
     pub fn cache_path_for(&self, song: &SongInfo, ext: &str) -> PathBuf {

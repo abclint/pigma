@@ -31,7 +31,6 @@ use crate::{
     config::{BorderConfig, Theme},
     layout,
     state::{App, Page},
-    utils::GradientPreset,
 };
 
 pub struct BlockStyle<'a> {
@@ -117,6 +116,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 &bs,
                 lay.topbar,
             );
+            app.state.playerbar_area = lay.playerbar;
             playerbar::draw(
                 f,
                 &app.playback.state,
@@ -151,14 +151,28 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                         .and_then(|i| nav.sections.get(nav.focus_section)?.items.get(i));
 
                     let title = {
-                        let name = current_item
-                            .map(|item| item.name.as_str())
-                            .unwrap_or("SONGS");
-                        let count = app.state.navigation.content.len();
-                        let template = current_item
-                            .and_then(|item| item.title_template.as_deref())
-                            .unwrap_or("{name} ({count})");
-                        render_title(template, name, count)
+                        let nst = &app.state.navigation;
+                        let focus = nst.nav.focus_section;
+                        let selected = nst.nav.section_states.get(focus).and_then(|st| st.selected());
+                        let generation = nst.generation;
+                        let cached = nst.title_cache.borrow();
+                        if let Some((ref title, f, s, g)) = *cached
+                            && f == focus && s == selected && g == generation
+                        {
+                            title.clone()
+                        } else {
+                            drop(cached);
+                            let name = current_item
+                                .map(|item| item.name.as_str())
+                                .unwrap_or("SONGS");
+                            let count = nst.content.len();
+                            let template = current_item
+                                .and_then(|item| item.title_template.as_deref())
+                                .unwrap_or("{name} ({count})");
+                            let title = render_title(template, name, count);
+                            *nst.title_cache.borrow_mut() = Some((title.clone(), focus, selected, generation));
+                            title
+                        }
                     };
                     let block = create_block(&title, &bs, false);
                     let inner = block.inner(lay.content);
@@ -183,7 +197,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                         f,
                         &app.playback.state,
                         &bs,
-                        GradientPreset::from_str_or_rainbow(&app.config.lyric_gradient),
+                        app.config.lyric_gradient,
                         &app.config.titles.lyrics,
                         lay.content,
                     );
@@ -288,13 +302,7 @@ pub(crate) fn create_block<'a>(
         .corner_color(corner)
         .corner_sizes(2, 1)
         .follow_corner_color(style.border.follow_corner_color)
-        .border_gradient(
-            style
-                .border
-                .border_gradient
-                .as_deref()
-                .map(GradientPreset::from_str_or_rainbow),
-        )
+        .border_gradient(style.border.border_gradient)
         .border_gradient_speed(style.border.border_gradient_speed)
         .tick(style.tick)
 }

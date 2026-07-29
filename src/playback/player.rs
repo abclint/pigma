@@ -2,6 +2,7 @@ use std::io::{Read, Seek, SeekFrom};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use rodio::mixer::Mixer;
 use rodio::Source;
 use rodio::cpal::traits::{DeviceTrait, HostTrait};
 use tokio::sync::{mpsc, oneshot};
@@ -46,12 +47,15 @@ pub enum ControlCmd {
 }
 
 /// Run the audio player. Returns a oneshot receiver that fires when the player
-/// task has fully finished and all resources (decoder, sink, reader) are dropped.
+/// task has fully finished and all resources (decoder, reader) are dropped.
+/// The `mixer` is obtained from a long-lived `MixerDeviceSink` managed by the
+/// controller, so the audio device is opened only once across songs.
 pub async fn run(
     reader: SharedReader,
     seek_time: Option<Duration>,
     event_tx: mpsc::UnboundedSender<Event>,
     control_rx: std::sync::mpsc::Receiver<ControlCmd>,
+    mixer: Mixer,
 ) -> oneshot::Receiver<()> {
     let (done_tx, done_rx) = oneshot::channel();
 
@@ -84,17 +88,7 @@ pub async fn run(
                 (Box::new(decoder), Duration::default())
             };
 
-        let mut sink = match open_sink_silent() {
-            Ok(s) => s,
-            Err(e) => {
-                let _ =
-                    event_tx.send(PlaybackEvent::Error(format!("open audio device: {e}")).into());
-                let _ = done_tx.send(());
-                return;
-            }
-        };
-        sink.log_on_drop(false);
-        let player = rodio::Player::connect_new(sink.mixer());
+        let player = rodio::Player::connect_new(&mixer);
         player.append(source);
 
         loop {
@@ -110,7 +104,7 @@ pub async fn run(
                     }
                     ControlCmd::Stop => {
                         player.stop();
-                        // sink, player, source, decoder are dropped here
+                        // player, source, decoder are dropped here
                         let _ = done_tx.send(());
                         return;
                     }
@@ -193,8 +187,10 @@ impl Drop for StderrGuard {
     }
 }
 
-/// Open rodio default sink while suppressing ALSA stderr noise.
-fn open_sink_silent() -> Result<rodio::MixerDeviceSink, rodio::DeviceSinkError> {
+/// Open the audio device while suppressing ALSA stderr noise (Linux only).
+/// The returned sink should be kept alive across songs so the device is
+/// opened only once.
+pub fn create_sink() -> Result<rodio::MixerDeviceSink, rodio::DeviceSinkError> {
     #[cfg(target_os = "linux")]
     {
         let _ = StderrGuard::new().map_err(|e| {

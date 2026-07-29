@@ -1,6 +1,8 @@
 use std::fmt;
 use std::str::FromStr;
 
+use serde::{Deserialize, Serialize};
+
 /// 歌词高亮渐变预设
 ///
 /// 复刻 colorgrad 预设的真实算法
@@ -11,7 +13,8 @@ use std::str::FromStr;
 /// - spectral / viridis：精确 hex 色站 + RGB 线性插值（BlendMode::Rgb）
 ///   未知名称回退到 rainbow
 ///   Gradient preset enum — avoids per-call string comparison in hot render paths.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum GradientPreset {
     #[default]
     Rainbow,

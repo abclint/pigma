@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::utils::GradientPreset;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BorderConfig {
     #[serde(default = "default_true")]
@@ -12,7 +14,7 @@ pub struct BorderConfig {
     /// 边框渐变预设（warm / rainbow / turbo / spectral / viridis / cubehelix）
     /// None = 纯色，Some = 渐变
     #[serde(default)]
-    pub border_gradient: Option<String>,
+    pub border_gradient: Option<GradientPreset>,
     /// 渐变流动速度，0 = 静态，>0 = 流动
     #[serde(default)]
     pub border_gradient_speed: f64,

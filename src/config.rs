@@ -15,6 +15,7 @@ pub use titles::*;
 use serde::{Deserialize, Serialize};
 use std::fs;
 
+use crate::utils::GradientPreset;
 use crate::{logger::Logger, utils};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,9 +38,8 @@ pub struct Config {
     #[serde(default)]
     pub columns: ColumnsConfig,
     /// 歌词高亮渐变风格：warm / cubehelix / rainbow / spectral / viridis / turbo。
-    /// 未知值回退到 warm。
-    #[serde(default = "default_lyric_gradient")]
-    pub lyric_gradient: String,
+    #[serde(default)]
+    pub lyric_gradient: GradientPreset,
     /// 边听边存缓存目录（绝对路径或相对于 ~/.cache/pigma/ 的路径）。
     #[serde(default = "default_cache_dir")]
     pub cache_dir: String,
@@ -63,10 +63,6 @@ pub struct Config {
 
 fn default_content_cache_ttl() -> u64 {
     300
-}
-
-fn default_lyric_gradient() -> String {
-    "rainbow".into()
 }
 
 fn default_quality() -> String {
@@ -114,7 +110,7 @@ impl Default for Config {
             playerbar: PlayerbarConfig::default(),
             titles: TitlesConfig::default(),
             columns: ColumnsConfig::default(),
-            lyric_gradient: default_lyric_gradient(),
+            lyric_gradient: GradientPreset::default(),
             cache_dir: default_cache_dir(),
             quality: default_quality(),
             cache_template: default_cache_template(),
