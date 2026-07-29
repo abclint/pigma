@@ -89,7 +89,7 @@ pub(super) fn row_enter_action(app: &mut App) {
             app.state.events.send(NavigationEvent::CellAction(sel, 0));
         }
         ContentState::HotSearch(keywords) => {
-            if let Some(kw) = keywords.get(sel) {
+            if let Some(kw) = keywords.0.get(sel) {
                 app.state
                     .events
                     .send(NavigationEvent::SearchSong(kw.clone()));

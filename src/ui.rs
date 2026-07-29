@@ -31,7 +31,6 @@ use crate::{
     config::{BorderConfig, Theme},
     layout,
     state::{App, Page},
-    utils::GradientPreset,
 };
 
 pub struct BlockStyle<'a> {
@@ -62,33 +61,13 @@ pub fn render_scrollbar(f: &mut Frame, total: usize, selected: usize, area: rata
 }
 
 /// Render a title template with `{name}` and `{count}` placeholders.
-pub fn render_title<'a>(template: &'a str, name: &str, count: usize) -> std::borrow::Cow<'a, str> {
+pub fn render_title(template: &str, name: &str, count: usize) -> String {
     if !template.contains('{') {
-        return std::borrow::Cow::Borrowed(template);
+        return template.to_owned();
     }
-    let mut result = String::with_capacity(template.len() + name.len() + 8);
-    let mut chars = template.char_indices().peekable();
-    while let Some((i, ch)) = chars.next() {
-        if ch == '{' {
-            if template[i..].starts_with("{name}") {
-                result.push_str(name);
-                for _ in 0..("{name}".len() - 1) {
-                    chars.next();
-                }
-            } else if template[i..].starts_with("{count}") {
-                use std::fmt::Write;
-                let _ = write!(result, "{count}");
-                for _ in 0..("{count}".len() - 1) {
-                    chars.next();
-                }
-            } else {
-                result.push(ch);
-            }
-        } else {
-            result.push(ch);
-        }
-    }
-    std::borrow::Cow::Owned(result)
+    template
+        .replace("{name}", name)
+        .replace("{count}", &count.to_string())
 }
 
 pub fn draw(f: &mut Frame, app: &mut App) {
@@ -139,6 +118,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 &bs,
                 lay.topbar,
             );
+            app.state.playerbar_area = lay.playerbar;
             playerbar::draw(
                 f,
                 &app.playback.state,
@@ -173,14 +153,35 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                         .and_then(|i| nav.sections.get(nav.focus_section)?.items.get(i));
 
                     let title = {
-                        let name = current_item
-                            .map(|item| item.name.as_str())
-                            .unwrap_or("SONGS");
-                        let count = app.state.navigation.content.len();
-                        let template = current_item
-                            .and_then(|item| item.title_template.as_deref())
-                            .unwrap_or("{name} ({count})");
-                        render_title(template, name, count)
+                        let nst = &app.state.navigation;
+                        let focus = nst.nav.focus_section;
+                        let selected = nst
+                            .nav
+                            .section_states
+                            .get(focus)
+                            .and_then(|st| st.selected());
+                        let generation = nst.generation;
+                        let cached = nst.title_cache.borrow();
+                        if let Some((ref title, f, s, g)) = *cached
+                            && f == focus
+                            && s == selected
+                            && g == generation
+                        {
+                            title.clone()
+                        } else {
+                            drop(cached);
+                            let name = current_item
+                                .map(|item| item.name.as_str())
+                                .unwrap_or("SONGS");
+                            let count = nst.content.len();
+                            let template = current_item
+                                .and_then(|item| item.title_template.as_deref())
+                                .unwrap_or("{name} ({count})");
+                            let title = render_title(template, name, count);
+                            *nst.title_cache.borrow_mut() =
+                                Some((title.clone(), focus, selected, generation));
+                            title
+                        }
                     };
                     let block = create_block(&title, &bs, false);
                     let inner = block.inner(lay.content);
@@ -205,7 +206,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                         f,
                         &app.playback.state,
                         &bs,
-                        GradientPreset::from_str_or_rainbow(&app.config.lyric_gradient),
+                        app.config.lyric_gradient,
                         &app.config.titles.lyrics,
                         lay.content,
                     );
@@ -310,13 +311,7 @@ pub(crate) fn create_block<'a>(
         .corner_color(corner)
         .corner_sizes(2, 1)
         .follow_corner_color(style.border.follow_corner_color)
-        .border_gradient(
-            style
-                .border
-                .border_gradient
-                .as_deref()
-                .map(GradientPreset::from_str_or_rainbow),
-        )
+        .border_gradient(style.border.border_gradient)
         .border_gradient_speed(style.border.border_gradient_speed)
         .tick(style.tick)
 }

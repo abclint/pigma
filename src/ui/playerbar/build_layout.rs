@@ -12,8 +12,6 @@ pub struct LayoutArea {
     pub gauge: Rect,
     pub spinner: Rect,
     pub mode_icon: Rect,
-    // todo: 重写
-    #[allow(dead_code)]
     pub volume: Rect,
 }
 
@@ -21,8 +19,8 @@ pub fn build_default(area: Rect) -> LayoutArea {
     let cols = Layout::horizontal([
         Constraint::Length(30),
         Constraint::Min(30),
-        Constraint::Length(12),
         Constraint::Length(3),
+        Constraint::Length(8),
     ])
     .split(area);
 
@@ -33,12 +31,20 @@ pub fn build_default(area: Rect) -> LayoutArea {
     ])
     .split(cols[1]);
 
+    let right = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Length(1),
+    ])
+    .split(cols[3]);
+
     LayoutArea {
         song_info: cols[0],
         controls: mid[0],
         gauge: mid[2],
         spinner: cols[2],
-        mode_icon: cols[3],
+        mode_icon: right[0],
+        volume: right[2],
         ..Default::default()
     }
 }
@@ -52,7 +58,7 @@ pub fn build_modern(area: Rect, show_cover: bool, _show_volume: bool) -> LayoutA
         },
         Constraint::Min(20),
     ])
-    .spacing(2)
+    .spacing(1)
     .split(area);
 
     let cover_area = cols[0];
@@ -62,6 +68,7 @@ pub fn build_modern(area: Rect, show_cover: bool, _show_volume: bool) -> LayoutA
         Constraint::Length(1),
         Constraint::Length(1),
     ])
+    .horizontal_margin(1)
     .split(cols[1]);
 
     let progress_cols = Layout::horizontal([
@@ -69,7 +76,6 @@ pub fn build_modern(area: Rect, show_cover: bool, _show_volume: bool) -> LayoutA
         Constraint::Min(10),
         Constraint::Length(6),
     ])
-    .spacing(2)
     .split(right_rows[0]);
 
     // Middle: song_info(left) | spinner(right)
@@ -79,12 +85,15 @@ pub fn build_modern(area: Rect, show_cover: bool, _show_volume: bool) -> LayoutA
 
     // Bottom: song_detail(left) | controls(center) | mode(right)
     let bottom_cols = Layout::horizontal([
+        Constraint::Length(15),
         Constraint::Length(20),
-        Constraint::Length(20),
-        Constraint::Length(3),
+        Constraint::Length(6),
     ])
     .flex(Flex::SpaceBetween)
     .split(right_rows[2]);
+
+    let vol_mode_cols =
+        Layout::horizontal([Constraint::Length(3), Constraint::Length(3)]).split(bottom_cols[2]);
 
     LayoutArea {
         cover: cover_area,
@@ -95,7 +104,8 @@ pub fn build_modern(area: Rect, show_cover: bool, _show_volume: bool) -> LayoutA
         spinner: middle_cols[1],
         song_detail: bottom_cols[0],
         controls: bottom_cols[1],
-        mode_icon: bottom_cols[2],
+        volume: vol_mode_cols[0],
+        mode_icon: vol_mode_cols[1],
         ..Default::default()
     }
 }

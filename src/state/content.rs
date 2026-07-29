@@ -4,6 +4,10 @@ use ncm_api::{SingerInfo, SongInfo, SongList, TopList};
 
 use crate::config::ContentType;
 
+/// Newtype for hot-search keyword list, providing type safety over bare `Vec<String>`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct HotSearchKeywords(pub Vec<String>);
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ContentState {
     Empty,
@@ -12,7 +16,7 @@ pub enum ContentState {
     Songs(Vec<SongInfo>),
     SongLists(Vec<SongList>),
     TopLists(Vec<TopList>),
-    HotSearch(Vec<String>),
+    HotSearch(HotSearchKeywords),
     Singers(Vec<SingerInfo>),
 }
 
@@ -22,7 +26,7 @@ impl ContentState {
             ContentState::Songs(s) => s.len(),
             ContentState::SongLists(l) => l.len(),
             ContentState::TopLists(l) => l.len(),
-            ContentState::HotSearch(kw) => kw.len(),
+            ContentState::HotSearch(kw) => kw.0.len(),
             ContentState::Singers(s) => s.len(),
             _ => 0,
         }

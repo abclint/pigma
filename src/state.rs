@@ -14,6 +14,7 @@ use std::cell::RefCell;
 use std::sync::{Arc, OnceLock};
 
 use ncm_api::LoginInfo;
+use ratatui::layout::Rect;
 use ratatui::widgets::TableState;
 
 use crate::{
@@ -59,6 +60,8 @@ impl Default for PaginationInfo {
     }
 }
 
+type TitleCache = (String, usize, Option<usize>, u64);
+
 #[derive(Clone)]
 pub struct BreadcrumbEntry {
     pub content: Arc<ContentState>,
@@ -88,6 +91,8 @@ pub struct NavigationState {
     /// Cached rendered rows to avoid per-frame serde serialization.
     /// Invalidated when `content` is replaced.
     pub content_rows_cache: RefCell<Option<Vec<Vec<String>>>>,
+    /// Cached block title string, keyed by (focus_section, selected_index, generation).
+    pub title_cache: RefCell<Option<TitleCache>>,
 }
 
 impl NavigationState {
@@ -100,6 +105,7 @@ impl NavigationState {
         self.table_state.select_first();
         self.pagination = None;
         *self.content_rows_cache.borrow_mut() = None;
+        *self.title_cache.borrow_mut() = None;
     }
 
     pub fn push_breadcrumb(&mut self) {
@@ -133,6 +139,7 @@ impl NavigationState {
                 self.nav.restore_focus_by_api(api);
             }
             *self.content_rows_cache.borrow_mut() = None;
+            *self.title_cache.borrow_mut() = None;
             true
         } else {
             false
@@ -164,6 +171,7 @@ pub struct State {
     pub last_tick: std::time::Instant,
     pub toast_msg: String,
     pub toast_time: Option<std::time::Instant>,
+    pub playerbar_area: Rect,
 }
 
 pub fn theme_fallback() -> &'static Theme {
@@ -287,6 +295,7 @@ impl App {
                     pagination: None,
                     generation: 0,
                     content_rows_cache: RefCell::new(None),
+                    title_cache: RefCell::new(None),
                 },
                 command_panel,
                 offline: false,
@@ -294,6 +303,7 @@ impl App {
                 last_tick: std::time::Instant::now(),
                 toast_msg: String::new(),
                 toast_time: None,
+                playerbar_area: Rect::default(),
             },
             theme_registry,
             picker,

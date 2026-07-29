@@ -17,8 +17,13 @@ pub mod text_input;
 pub mod ui;
 pub mod utils;
 
+// #[global_allocator]
+// static ALLOC: dhat::Alloc = dhat::Alloc;
+
 #[tokio::main]
 async fn main() -> color_eyre::Result<()> {
+    // let _dhat = dhat::Profiler::new_heap();
+    let _ = rustls::crypto::ring::default_provider().install_default();
     color_eyre::install()?;
     let config = Config::load();
     init_logger(&config)?;

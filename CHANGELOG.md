@@ -1,3 +1,16 @@
+## [0.1.6] - 2026-07-29
+
+### 💼 Other
+
+- *(deps)* Bump actions/checkout from 4 to 7 (dependabot[bot])
+- *(deps)* Bump softprops/action-gh-release from 2 to 3 (dependabot[bot])
+- *(deps)* Bump actions/upload-artifact from 4 to 7 (dependabot[bot])
+
+### 🚜 Refactor
+
+- *(config)* Rewrite config file inline ArrayOfTables. (akirco)
+- *(playerbar)* Fix layout issues (akirco)
+- *(playerback)* Adjust cpal buffersize,reduce the frequency of thread wakes (akirco)
 ## [0.1.5] - 2026-07-27
 
 ### 🚀 Features

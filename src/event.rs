@@ -107,14 +107,12 @@ pub enum CommandPanelAction {
     Select,
 }
 
+/// 子事件枚举直接转换为 Event（调用方使用 .into() 时需要此路径）。
+/// From<$sub> for AppEvent 不再生成，因为所有调用方都直接 .into() → Event，
+/// 不经过 AppEvent 中间转换。From<AppEvent> for Event 单独保留，
+/// 用于 AppEvent::Quit 等直接构造 AppEvent 变体的场景。
 macro_rules! impl_from_sub_event {
     ($variant:ident, $sub:ty) => {
-        impl From<$sub> for AppEvent {
-            fn from(e: $sub) -> Self {
-                AppEvent::$variant(e)
-            }
-        }
-
         impl From<$sub> for Event {
             fn from(e: $sub) -> Self {
                 Event::App(AppEvent::$variant(e))

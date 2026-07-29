@@ -39,11 +39,15 @@ pub fn draw(
     widgets::draw_controls(f, player, colors, layout.controls);
     widgets::draw_gauge_with_label(f, player, colors, config, layout.gauge);
 
-    if player.seeking && config.visible.spinner {
-        widgets::draw_spinner(f, _tick, colors, layout.spinner);
-    }
-
     if config.visible.mode_icon {
         widgets::draw_mode_icon(f, player, colors, layout.mode_icon);
+    }
+
+    if config.visible.volume && layout.volume.width > 0 {
+        widgets::draw_volume(f, player, colors, layout.volume);
+    }
+
+    if player.seeking && config.visible.spinner {
+        widgets::draw_spinner(f, _tick, colors, layout.spinner);
     }
 }

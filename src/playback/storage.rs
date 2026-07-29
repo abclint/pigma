@@ -79,7 +79,7 @@ impl PlaylistStorage {
             volume,
             progress,
         };
-        if let Ok(json) = serde_json::to_string_pretty(&saved) {
+        if let Ok(json) = serde_json::to_string(&saved) {
             let path = self.auto_save_path();
             tokio::task::spawn_blocking(move || {
                 let _ = fs::write(path, json);
@@ -99,7 +99,7 @@ impl PlaylistStorage {
     pub fn save_playlist(&self, name: &str, songs: &[Arc<SongInfo>]) -> bool {
         let path = self.base_dir.join(format!("{}.json", name));
         let owned: Vec<SongInfo> = songs.iter().map(|s| (**s).clone()).collect();
-        if let Ok(json) = serde_json::to_string_pretty(&owned) {
+        if let Ok(json) = serde_json::to_string(&owned) {
             tokio::task::spawn_blocking(move || fs::write(path, json).is_ok());
             true
         } else {

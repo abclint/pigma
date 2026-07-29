@@ -39,7 +39,7 @@ pub(super) fn handle_search_key(app: &mut App, key_event: KeyEvent) -> bool {
                     app.state.navigation.content.as_ref()
                 {
                     let sel = app.state.navigation.content_selected;
-                    if let Some(kw) = keywords.get(sel) {
+                    if let Some(kw) = keywords.0.get(sel) {
                         app.state.navigation.search.active = false;
                         app.state
                             .events

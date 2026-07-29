@@ -157,7 +157,27 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
     Ok(())
 }
 
-pub(super) fn handle_main_mouse(app: &mut App, kind: MouseEventKind) {
+pub(super) fn handle_main_mouse(app: &mut App, kind: MouseEventKind, col: u16, row: u16) {
+    // Volume scroll: if mouse is over playerbar area
+    let area = app.state.playerbar_area;
+    if row >= area.y && row < area.y + area.height && col >= area.x && col < area.x + area.width {
+        let vol = app.playback.state.volume;
+        match kind {
+            MouseEventKind::ScrollUp => {
+                let new = (vol + 0.05).clamp(0.0, 1.0);
+                app.playback.set_volume(new);
+                app.toast(format!("   {:.0}%", new * 100.0));
+            }
+            MouseEventKind::ScrollDown => {
+                let new = (vol - 0.05).clamp(0.0, 1.0);
+                app.playback.set_volume(new);
+                app.toast(format!("   {:.0}%", new * 100.0));
+            }
+            _ => {}
+        }
+        return;
+    }
+
     match app.state.navigation.page {
         Page::Lyrics => {
             if kind == MouseEventKind::ScrollUp {

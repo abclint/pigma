@@ -6,7 +6,6 @@ pub(crate) mod splash;
 
 use crossterm::event::Event as CrosstermEvent;
 use ratatui::{DefaultTerminal, Frame};
-use tokio::time::Duration;
 
 pub use crate::state::App;
 
@@ -26,12 +25,7 @@ impl App {
         self.start_splash_boot();
         while self.state.running {
             terminal.draw(|frame| self.draw(frame))?;
-
-            match tokio::time::timeout(Duration::from_millis(32), self.handle_events()).await {
-                Ok(Ok(())) => {}
-                Ok(Err(e)) => return Err(e),
-                Err(_) => {}
-            }
+            self.handle_events().await?;
 
             if self.state.splash.boot_complete && self.state.navigation.page == Page::Splash {
                 if self.state.offline {
@@ -101,7 +95,7 @@ impl App {
                     input::handle_key_events(self, key)?
                 }
                 CrosstermEvent::Mouse(mouse) => {
-                    input::handle_mouse_event(self, mouse.kind);
+                    input::handle_mouse_event(self, mouse.kind, mouse.column, mouse.row);
                 }
                 _ => {}
             },
