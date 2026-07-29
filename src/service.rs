@@ -107,7 +107,9 @@ impl ApiService {
             },
             ApiEndpoint::Search => match self.client.search_hot().await {
                 Ok(items) => (
-                    ContentState::HotSearch(crate::state::HotSearchKeywords(items.into_iter().map(|h| h.keyword).collect())),
+                    ContentState::HotSearch(crate::state::HotSearchKeywords(
+                        items.into_iter().map(|h| h.keyword).collect(),
+                    )),
                     None,
                 ),
                 Err(e) => (ContentState::Error(e.to_string()), None),

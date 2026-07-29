@@ -65,7 +65,9 @@ pub fn render_title(template: &str, name: &str, count: usize) -> String {
     if !template.contains('{') {
         return template.to_owned();
     }
-    template.replace("{name}", name).replace("{count}", &count.to_string())
+    template
+        .replace("{name}", name)
+        .replace("{count}", &count.to_string())
 }
 
 pub fn draw(f: &mut Frame, app: &mut App) {
@@ -153,11 +155,17 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     let title = {
                         let nst = &app.state.navigation;
                         let focus = nst.nav.focus_section;
-                        let selected = nst.nav.section_states.get(focus).and_then(|st| st.selected());
+                        let selected = nst
+                            .nav
+                            .section_states
+                            .get(focus)
+                            .and_then(|st| st.selected());
                         let generation = nst.generation;
                         let cached = nst.title_cache.borrow();
                         if let Some((ref title, f, s, g)) = *cached
-                            && f == focus && s == selected && g == generation
+                            && f == focus
+                            && s == selected
+                            && g == generation
                         {
                             title.clone()
                         } else {
@@ -170,7 +178,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                                 .and_then(|item| item.title_template.as_deref())
                                 .unwrap_or("{name} ({count})");
                             let title = render_title(template, name, count);
-                            *nst.title_cache.borrow_mut() = Some((title.clone(), focus, selected, generation));
+                            *nst.title_cache.borrow_mut() =
+                                Some((title.clone(), focus, selected, generation));
                             title
                         }
                     };

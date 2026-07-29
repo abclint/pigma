@@ -2,9 +2,9 @@ use std::io::{Read, Seek, SeekFrom};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use rodio::mixer::Mixer;
 use rodio::Source;
 use rodio::cpal::traits::{DeviceTrait, HostTrait};
+use rodio::mixer::Mixer;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::event::{Event, PlaybackEvent};
@@ -234,6 +234,7 @@ fn open_sink_impl() -> Result<rodio::MixerDeviceSink, rodio::DeviceSinkError> {
                 {
                     log::info!("opening audio device: {}", name);
                     if let Ok(sink) = rodio::DeviceSinkBuilder::from_device(device.clone())
+                        .map(|b| b.with_buffer_size(rodio::cpal::BufferSize::Fixed(8192)))
                         .and_then(|b| b.open_sink_or_fallback())
                     {
                         return Ok(sink);

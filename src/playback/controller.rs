@@ -48,8 +48,10 @@ impl PlaybackHandle {
                                     sink = Some(s);
                                 }
                                 Err(e) => {
-                                    let _ = event_tx
-                                        .send(PlaybackEvent::Error(format!("open audio device: {e}")).into());
+                                    let _ = event_tx.send(
+                                        PlaybackEvent::Error(format!("open audio device: {e}"))
+                                            .into(),
+                                    );
                                     continue;
                                 }
                             }

@@ -7,8 +7,8 @@ use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ncm_api::SongInfo;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde::ser::SerializeMap;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use stream_download::storage::StorageProvider;
 
 use crate::state::ContentState;
@@ -42,7 +42,8 @@ struct CacheEntry {
 
 impl Serialize for CacheEntry {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let n = 2 + usize::from(self.accessed_at > 0)
+        let n = 2
+            + usize::from(self.accessed_at > 0)
             + usize::from(!self.pic_url.is_empty())
             + usize::from(self.uploaded_at > 0);
         let mut map = serializer.serialize_map(Some(n))?;
