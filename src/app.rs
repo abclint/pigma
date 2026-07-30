@@ -4,8 +4,11 @@ pub(crate) mod navigation;
 pub(crate) mod search;
 pub(crate) mod splash;
 
+use std::time::Duration;
+
 use crossterm::event::Event as CrosstermEvent;
 use ratatui::{DefaultTerminal, Frame};
+use tokio::time::sleep;
 
 pub use crate::state::App;
 
@@ -89,7 +92,23 @@ impl App {
     }
 
     async fn handle_events(&mut self) -> color_eyre::Result<()> {
-        match self.state.events.next().await? {
+        if self.playback.state.seeking {
+            tokio::select! {
+                biased;
+                result = self.state.events.next() => {
+                    self.dispatch_event(result?)?;
+                }
+                _ = sleep(Duration::from_millis(32)) => {}
+            }
+        } else {
+            let event = self.state.events.next().await?;
+            self.dispatch_event(event)?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_event(&mut self, event: Event) -> color_eyre::Result<()> {
+        match event {
             Event::Crossterm(event) => match event {
                 CrosstermEvent::Key(key) if key.kind == crossterm::event::KeyEventKind::Press => {
                     input::handle_key_events(self, key)?
