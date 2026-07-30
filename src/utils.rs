@@ -1,5 +1,6 @@
 pub mod format;
 pub mod gradient;
+pub mod terminal;
 pub mod time;
 pub mod youtube;
 
