@@ -1,3 +1,15 @@
+## [0.1.7] - 2026-07-30
+
+### 🐛 Bug Fixes
+
+- *(events)* Seeking spinner (akirco)
+- *(cover)* Ratatui-image image protocol check failed (akirco)
+- *(navigation)* Need not cache failed responses (akirco)
+
+### 🚜 Refactor
+
+- *(playback)* Optimize memory by reusing player & manual memory recycling (akirco)
+
 ## [0.1.6] - 2026-07-29
 
 ### 💼 Other
