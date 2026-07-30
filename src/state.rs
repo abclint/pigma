@@ -267,8 +267,18 @@ impl App {
 
         let service = ApiService::new(api.clone(), cache.clone());
 
-        let picker = ratatui_image::picker::Picker::from_query_stdio()
+        let mut picker = ratatui_image::picker::Picker::from_query_stdio()
             .unwrap_or_else(|_| ratatui_image::picker::Picker::halfblocks());
+
+        match crate::utils::terminal::best_image_protocol() {
+            Some(crate::utils::terminal::ImageProtocol::Kitty) => {
+                picker.set_protocol_type(ratatui_image::picker::ProtocolType::Kitty);
+            }
+            Some(crate::utils::terminal::ImageProtocol::Sixel) => {
+                picker.set_protocol_type(ratatui_image::picker::ProtocolType::Sixel);
+            }
+            None => {}
+        }
 
         Ok(Self {
             config,

@@ -6,6 +6,8 @@ use y7dl::Client;
 
 use super::player::{AudioInput, SharedReader};
 use crate::cache::CacheManager;
+#[cfg(target_os = "linux")]
+use crate::playback::mem_rss_kb;
 use crate::service::ApiService;
 use crate::utils::youtube::{clean_search_query, parse_duration_str, score_match};
 
@@ -66,6 +68,13 @@ impl AudioSource {
             .await
             .map_err(|e| format!("YouTube搜索失败: {e}"))?;
 
+        #[cfg(target_os = "linux")]
+        log::info!(
+            "[HEAP] after y7dl search (id={}): {} kB",
+            song.id,
+            mem_rss_kb()
+        );
+
         if results.is_empty() {
             return Err("YouTube未找到相关结果".into());
         }
@@ -111,6 +120,13 @@ impl AudioSource {
             .await
             .map_err(|e| format!("获取YouTube流地址失败: {e}"))?;
 
+        #[cfg(target_os = "linux")]
+        log::info!(
+            "[HEAP] after stream_url (id={}): {} kB",
+            song.id,
+            mem_rss_kb()
+        );
+
         let url =
             url::Url::parse(&stream_url_str).map_err(|e| format!("YouTube URL解析失败: {e}"))?;
 
@@ -123,6 +139,13 @@ impl AudioSource {
         let reader = StreamDownload::new_http(url, provider, Settings::default())
             .await
             .map_err(|e| format!("YouTube流下载失败: {e}"))?;
+
+        #[cfg(target_os = "linux")]
+        log::info!(
+            "[HEAP] after StreamDownload::new_http (id={}): {} kB",
+            song.id,
+            mem_rss_kb()
+        );
 
         self.cache.mark_cached(song, ext);
 
@@ -210,6 +233,13 @@ impl AudioSource {
                     );
                 }
                 Err(e) => {
+                    #[cfg(target_os = "linux")]
+                    log::info!(
+                        "[HEAP] after resolve_ncm FAIL (id={}): {} kB — {}",
+                        song.id,
+                        mem_rss_kb(),
+                        e
+                    );
                     log::info!(
                         "NCM解析失败，尝试YouTube fallback: {} - {} ({})",
                         song.name,
@@ -221,6 +251,12 @@ impl AudioSource {
             }
         }
 
+        #[cfg(target_os = "linux")]
+        log::info!(
+            "[HEAP] after resolve_ncm retries exhausted (id={}): {} kB",
+            song.id,
+            mem_rss_kb()
+        );
         log::warn!(
             "NCM网络错误，2次重试失败，fallback到YouTube: {} - {}",
             song.name,

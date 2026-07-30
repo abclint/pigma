@@ -90,7 +90,7 @@ impl App {
                 && let Some(uid) = uid
             {
                 let (state, playlist_id) = service.load_liked_songs(uid, limit).await;
-                if ttl > 0 {
+                if ttl > 0 && !matches!(state, ContentState::Error(_)) {
                     let cache_clone = cache.clone();
                     let state_clone = state.clone();
                     tokio::task::spawn_blocking(move || {
@@ -111,7 +111,7 @@ impl App {
 
             let (state, pagination) = service.resolve_content(api, uid, limit).await;
 
-            if ttl > 0 && api != ApiEndpoint::Search {
+            if ttl > 0 && api != ApiEndpoint::Search && !matches!(state, ContentState::Error(_)) {
                 let cache_clone = cache.clone();
                 let api_str_clone = api_str.clone();
                 let state_clone = state.clone();

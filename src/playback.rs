@@ -11,6 +11,20 @@ pub mod types;
 use std::sync::Arc;
 use std::time::Duration;
 
+/// Read the current RSS in KB from /proc/self/status.
+#[cfg(target_os = "linux")]
+pub(crate) fn mem_rss_kb() -> u64 {
+    std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|s| {
+            s.lines()
+                .find(|l| l.starts_with("VmRSS:"))
+                .and_then(|l| l.split_whitespace().nth(1))
+                .and_then(|v| v.parse().ok())
+        })
+        .unwrap_or(0)
+}
+
 use ncm_api::{SongInfo, SongQuality};
 use tokio::sync::mpsc;
 
@@ -175,6 +189,7 @@ impl PlaybackEngine {
 
         match self.queue.next_index(&mut self.strategy) {
             Some(idx) => {
+                self.controller.stop();
                 self.queue.advance_to(idx);
                 self.start_current_song(None);
             }
@@ -192,12 +207,14 @@ impl PlaybackEngine {
         if let Some(prev_song) = self.queue.pop_history()
             && let Some(pos) = self.queue.find_song_index(prev_song.id)
         {
+            self.controller.stop();
             self.queue.current_index = Some(pos);
             self.start_current_song(None);
             return;
         }
 
         if let Some(idx) = self.queue.prev_index(&mut self.strategy) {
+            self.controller.stop();
             self.queue.current_index = Some(idx);
             self.start_current_song(None);
         }
@@ -447,16 +464,47 @@ impl PlaybackEngine {
             log::error!("Failed to send PlaybackStarted: receiver dropped");
         }
 
+        let song_name = song.name.clone();
+        let song_id = song.id;
         tokio::spawn(async move {
+            #[cfg(target_os = "linux")]
+            log::info!(
+                "[HEAP] before resolve {} (id={}): {} kB",
+                song_name,
+                song_id,
+                mem_rss_kb()
+            );
             let input = match source.resolve(&song).await {
                 Ok(input) => input,
                 Err(e) => {
+                    #[cfg(target_os = "linux")]
+                    log::info!(
+                        "[HEAP] after resolve FAIL {} (id={}): {} kB",
+                        song_name,
+                        song_id,
+                        mem_rss_kb()
+                    );
+                    #[cfg(target_os = "linux")]
+                    unsafe {
+                        libc::malloc_trim(0);
+                    }
                     if event_tx.send(PlaybackEvent::Error(e).into()).is_err() {
                         log::error!("Failed to send PlaybackError: receiver dropped");
                     }
                     return;
                 }
             };
+            #[cfg(target_os = "linux")]
+            log::info!(
+                "[HEAP] after resolve OK {} (id={}): {} kB",
+                song_name,
+                song_id,
+                mem_rss_kb()
+            );
+            #[cfg(target_os = "linux")]
+            unsafe {
+                libc::malloc_trim(0);
+            }
             controller.request(input, seek_time);
         });
     }

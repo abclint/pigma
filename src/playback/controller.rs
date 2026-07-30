@@ -1,11 +1,10 @@
-use std::io::{Seek, SeekFrom};
 use std::sync::mpsc;
 use std::time::Duration;
 
 use rodio::MixerDeviceSink;
 use tokio::sync::mpsc as tokio_mpsc;
 
-use super::player::{self, AudioInput, ControlCmd, SharedReader};
+use super::player::{self, AudioInput, ControlCmd};
 use crate::event::{Event, PlaybackEvent};
 
 #[derive(Clone)]
@@ -31,8 +30,7 @@ impl PlaybackHandle {
 
         tokio::spawn(async move {
             let mut control_tx: Option<mpsc::Sender<ControlCmd>> = None;
-            let mut shared_reader: Option<SharedReader> = None;
-            let mut old_done_rx: Option<tokio::sync::oneshot::Receiver<()>> = None;
+            let mut last_volume: f32 = 1.0;
             // Create the audio sink once and reuse it across songs,
             // so the audio device is opened only on the first playback.
             let mut sink: Option<MixerDeviceSink> = None;
@@ -57,25 +55,29 @@ impl PlaybackHandle {
                             }
                         }
 
-                        if let Some(ctrl) = control_tx.take() {
+                        if let Some(ref ctrl) = control_tx {
+                            // Player task already running — switch to new source.
+                            let _ = ctrl.send(ControlCmd::Switch(input, seek_time));
+                        } else {
+                            // First playback: spawn the persistent player task.
+                            let (ctrl_tx, ctrl_rx) = mpsc::channel();
+                            control_tx = Some(ctrl_tx);
+                            let tx = event_tx.clone();
+                            let mixer = sink.as_ref().expect("sink just created").mixer().clone();
+                            player::run(input, seek_time, last_volume, tx, ctrl_rx, mixer);
+                        }
+                    }
+                    PlayerCmd::SeekTo(seek_time) => {
+                        if let Some(ref ctrl) = control_tx {
+                            let _ = ctrl.send(ControlCmd::SeekTo(seek_time));
+                        }
+                    }
+                    PlayerCmd::Stop => {
+                        if let Some(ref ctrl) = control_tx {
+                            // Player task stays alive, just clears decoder.
                             let _ = ctrl.send(ControlCmd::Stop);
                         }
-                        // Await old player completion to ensure its decoder
-                        // and underlying StreamDownload (HTTP connection,
-                        // buffers) are fully dropped before starting a new one.
-                        if let Some(rx) = old_done_rx.take() {
-                            let _ = rx.await;
-                        }
-
-                        shared_reader = Some(input.clone());
-
-                        let (ctrl_tx, ctrl_rx) = mpsc::channel();
-                        control_tx = Some(ctrl_tx);
-
-                        let tx = event_tx.clone();
-                        let mixer = sink.as_ref().expect("sink just created").mixer().clone();
-                        let done_rx = player::run(input, seek_time, tx, ctrl_rx, mixer).await;
-                        old_done_rx = Some(done_rx);
+                        // Keep sink alive so next play reuses the device.
                     }
                     PlayerCmd::Pause => {
                         if let Some(ref ctrl) = control_tx {
@@ -87,47 +89,8 @@ impl PlaybackHandle {
                             let _ = ctrl.send(ControlCmd::Resume);
                         }
                     }
-                    PlayerCmd::SeekTo(seek_time) => {
-                        if sink.is_none() {
-                            continue;
-                        }
-
-                        if let Some(ctrl) = control_tx.take() {
-                            let _ = ctrl.send(ControlCmd::Stop);
-                        }
-                        // Await old player completion before reusing the reader.
-                        if let Some(rx) = old_done_rx.take() {
-                            let _ = rx.await;
-                        }
-
-                        if let Some(ref reader) = shared_reader {
-                            if let Ok(mut locked) = reader.0.lock() {
-                                let _ = locked.seek(SeekFrom::Start(0));
-                            }
-                            let input = reader.clone();
-                            let (ctrl_tx, ctrl_rx) = mpsc::channel();
-                            control_tx = Some(ctrl_tx);
-
-                            let tx = event_tx.clone();
-                            let mixer = sink.as_ref().expect("sink exists").mixer().clone();
-                            let done_rx =
-                                player::run(input, Some(seek_time), tx, ctrl_rx, mixer).await;
-                            old_done_rx = Some(done_rx);
-                        }
-                    }
-                    PlayerCmd::Stop => {
-                        if let Some(ctrl) = control_tx.take() {
-                            let _ = ctrl.send(ControlCmd::Stop);
-                        }
-                        // Await old player completion so resources are freed
-                        // immediately rather than lingering in the background.
-                        if let Some(rx) = old_done_rx.take() {
-                            let _ = rx.await;
-                        }
-                        shared_reader = None;
-                        // Keep sink alive so next play reuses the device.
-                    }
                     PlayerCmd::SetVolume(v) => {
+                        last_volume = v;
                         if let Some(ref ctrl) = control_tx {
                             let _ = ctrl.send(ControlCmd::SetVolume(v));
                         }
