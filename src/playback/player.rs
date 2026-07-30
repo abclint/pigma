@@ -5,7 +5,7 @@ use std::time::Duration;
 use rodio::Source;
 use rodio::cpal::traits::{DeviceTrait, HostTrait};
 use rodio::mixer::Mixer;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 
 use crate::event::{Event, PlaybackEvent};
 
@@ -19,6 +19,12 @@ pub type AudioInput = SharedReader;
 /// then creates a new decoder + player from the seeked position.
 #[derive(Clone)]
 pub struct SharedReader(pub Arc<Mutex<Box<dyn AudioReader + 'static>>>);
+
+impl std::fmt::Debug for SharedReader {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SharedReader").finish_non_exhaustive()
+    }
+}
 
 impl Read for SharedReader {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
@@ -40,111 +46,159 @@ impl Seek for SharedReader {
 
 #[derive(Debug, Clone)]
 pub enum ControlCmd {
+    Switch(AudioInput, Option<Duration>),
+    SeekTo(Duration),
     Pause,
     Resume,
     Stop,
     SetVolume(f32),
 }
 
-/// Run the audio player. Returns a oneshot receiver that fires when the player
-/// task has fully finished and all resources (decoder, reader) are dropped.
+/// Run the audio player as a persistent blocking task. The task is spawned once
+/// and stays alive across songs — new sources are fed via ControlCmd::Switch.
 /// The `mixer` is obtained from a long-lived `MixerDeviceSink` managed by the
 /// controller, so the audio device is opened only once across songs.
-pub async fn run(
-    reader: SharedReader,
-    seek_time: Option<Duration>,
+pub fn run(
+    initial_reader: SharedReader,
+    initial_seek_time: Option<Duration>,
+    initial_volume: f32,
     event_tx: mpsc::UnboundedSender<Event>,
     control_rx: std::sync::mpsc::Receiver<ControlCmd>,
     mixer: Mixer,
-) -> oneshot::Receiver<()> {
-    let (done_tx, done_rx) = oneshot::channel();
-
-    let progress_interval = Duration::from_millis(200);
-
+) {
     tokio::task::spawn_blocking(move || {
-        // Decoder is created inside the blocking task so it is dropped here
-        // when the task finishes, ensuring the underlying StreamDownload (and
-        // its HTTP connection / buffers) is released promptly.
-        let decoder = match rodio::Decoder::new(reader) {
-            Ok(d) => d,
-            Err(e) => {
-                let _ = event_tx.send(PlaybackEvent::Error(format!("decode: {e}")).into());
-                let _ = done_tx.send(());
-                return;
-            }
-        };
+        let progress_interval = Duration::from_millis(200);
+        let mut reader = initial_reader;
+        let mut total_duration: Option<Duration> = None;
+        let mut seek_offset: Duration = Duration::default();
+        let mut volume = initial_volume;
 
-        let total_duration = decoder.total_duration();
-        let (source, seek_offset): (Box<dyn Source<Item = f32> + Send>, Duration) =
-            if let Some(t) = seek_time {
-                let mut d = decoder;
-                if d.try_seek(t).is_err() {
-                    log::warn!("try_seek failed for {t:?}, starting from 0");
-                    (Box::new(d), Duration::default())
-                } else {
-                    (Box::new(d), t)
+        macro_rules! start_playback {
+            ($seek_time:expr) => {{
+                let input = reader.clone();
+                match rodio::Decoder::new(input) {
+                    Ok(d) => {
+                        total_duration = d.total_duration();
+                        let seek_time = $seek_time;
+                        let (source, offset): (Box<dyn Source<Item = f32> + Send>, Duration) =
+                            if let Some(t) = seek_time {
+                                let mut d = d;
+                                if d.try_seek(t).is_err() {
+                                    log::warn!("try_seek failed for {t:?}, starting from 0");
+                                    (Box::new(d), Duration::default())
+                                } else {
+                                    (Box::new(d), t)
+                                }
+                            } else {
+                                (Box::new(d), Duration::default())
+                            };
+                        seek_offset = offset;
+                        let p = rodio::Player::connect_new(&mixer);
+                        p.set_volume(volume);
+                        p.append(source);
+                        Some(p)
+                    }
+                    Err(e) => {
+                        let _ = event_tx.send(PlaybackEvent::Error(format!("decode: {e}")).into());
+                        None
+                    }
                 }
-            } else {
-                (Box::new(decoder), Duration::default())
-            };
+            }};
+        }
 
-        let player = rodio::Player::connect_new(&mixer);
-        player.append(source);
+        // Initial playback
+        let mut player: Option<rodio::Player> = start_playback!(initial_seek_time);
 
         loop {
             match control_rx.recv_timeout(progress_interval) {
                 Ok(cmd) => match cmd {
-                    ControlCmd::Pause => {
-                        player.pause();
-                        continue;
+                    ControlCmd::Switch(input, seek_time) => {
+                        if let Some(ref p) = player {
+                            p.stop();
+                        }
+                        drop(player.take());
+                        reader = input;
+                        player = start_playback!(seek_time);
                     }
-                    ControlCmd::Resume => {
-                        player.play();
-                        continue;
+                    ControlCmd::SeekTo(seek_time) => {
+                        if player.is_none() {
+                            continue;
+                        }
+                        if let Some(ref p) = player {
+                            p.stop();
+                        }
+                        drop(player.take());
+                        let _ = reader.0.lock().map(|mut r| r.seek(SeekFrom::Start(0)));
+                        player = start_playback!(Some(seek_time));
                     }
                     ControlCmd::Stop => {
-                        player.stop();
-                        // player, source, decoder are dropped here
-                        let _ = done_tx.send(());
-                        return;
+                        if let Some(ref p) = player {
+                            p.stop();
+                        }
+                        drop(player.take());
+                        reader = SharedReader(Arc::new(Mutex::new(Box::new(std::io::empty()))));
+                        total_duration = None;
+                        seek_offset = Duration::default();
+                        #[cfg(target_os = "linux")]
+                        log::info!(
+                            "[HEAP] after ControlCmd::Stop: {} kB",
+                            crate::playback::mem_rss_kb()
+                        );
+                    }
+                    ControlCmd::Pause => {
+                        if let Some(ref p) = player {
+                            p.pause();
+                        }
+                    }
+                    ControlCmd::Resume => {
+                        if let Some(ref p) = player {
+                            p.play();
+                        }
                     }
                     ControlCmd::SetVolume(v) => {
-                        player.set_volume(v);
-                        continue;
+                        volume = v;
+                        if let Some(ref p) = player {
+                            p.set_volume(v);
+                        }
                     }
                 },
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
             }
 
-            if player.empty() && !player.is_paused() {
-                if event_tx.send(PlaybackEvent::Finished.into()).is_err() {
-                    log::error!("Failed to send PlaybackFinished: receiver dropped");
+            if let Some(ref p) = player {
+                if p.empty() && !p.is_paused() {
+                    #[cfg(target_os = "linux")]
+                    log::info!(
+                        "[HEAP] song finished (playback complete): {} kB",
+                        crate::playback::mem_rss_kb()
+                    );
+                    let _ = event_tx.send(PlaybackEvent::Finished.into());
+                    p.stop();
+                    drop(player.take());
+                    total_duration = None;
+                    seek_offset = Duration::default();
+                    #[cfg(target_os = "linux")]
+                    log::info!(
+                        "[HEAP] after player drop on finish: {} kB",
+                        crate::playback::mem_rss_kb()
+                    );
+                    continue;
                 }
-                break;
-            }
 
-            if !player.is_paused() {
-                let pos = player.get_pos() + seek_offset;
-                if event_tx
-                    .send(
+                if !p.is_paused() {
+                    let pos = p.get_pos() + seek_offset;
+                    let _ = event_tx.send(
                         PlaybackEvent::Progress {
                             position: pos,
                             total: total_duration,
                         }
                         .into(),
-                    )
-                    .is_err()
-                {
-                    log::error!("Failed to send PlaybackProgress: receiver dropped");
+                    );
                 }
             }
         }
-        // player, source, decoder dropped here
-        let _ = done_tx.send(());
     });
-
-    done_rx
 }
 
 /// RAII guard that redirects stderr to /dev/null while alive, restoring it on drop.
@@ -219,13 +273,6 @@ fn open_sink_impl() -> Result<rodio::MixerDeviceSink, rodio::DeviceSinkError> {
         let host = rodio::cpal::default_host();
         if let Ok(devices) = host.devices() {
             let list: Vec<_> = devices.collect();
-
-            // ! linux debug
-            // for d in &list {
-            //     if let Ok(id) = d.id() {
-            //         log::debug!("cpal device: {}", id.1);
-            //     }
-            // }
 
             for name in ["pipewire", "pulse"] {
                 if let Some(device) = list
