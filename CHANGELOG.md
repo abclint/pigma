@@ -1,3 +1,13 @@
+## [0.1.8] - 2026-08-01
+
+### 🚀 Features
+
+- *(navigation)* New layout (top) (akirco)
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Add aur release (akirco)
+- *(state)* Nav.rs renamed to navigation.rs (akirco)
 ## [0.1.7] - 2026-07-30
 
 ### 🐛 Bug Fixes
