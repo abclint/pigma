@@ -16,6 +16,9 @@ content_cache_ttl = 300
 # 搜索结果数量限制
 search_limit = 100
 
+# 导航栏位置: "sidebar" (侧边, 默认) 或 "top" (顶部 topbar 下方一行, 不显示面包屑)
+nav_position = "sidebar"
+
 # 歌词渐变效果: "rainbow", "fire", "ocean", "forest", "sunset", "neon", "pastel", "monochrome"
 lyric_gradient = "rainbow"
 

@@ -1,5 +1,6 @@
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
 
+use crate::config::NavPosition;
 use crate::state::Page;
 
 pub struct SplashLayout {
@@ -48,34 +49,56 @@ pub struct LayoutAreas {
     pub topbar: Rect,
     pub sidebar: Rect,
     pub breadcrumb: Rect,
+    pub nav: Rect,
     pub content: Rect,
     pub playerbar: Rect,
 }
 
-pub fn build_layout(area: Rect, page: Page) -> LayoutAreas {
+pub fn build_layout(area: Rect, page: Page, nav_position: NavPosition) -> LayoutAreas {
     match page {
-        Page::Main => {
-            let [topbar, middle, playerbar] = Layout::vertical([
-                Constraint::Length(3),
-                Constraint::Min(10),
-                Constraint::Length(5),
-            ])
-            .areas(area);
+        Page::Main => match nav_position {
+            NavPosition::Top => {
+                let [topbar, nav, middle, playerbar] = Layout::vertical([
+                    Constraint::Length(3),
+                    Constraint::Length(3),
+                    Constraint::Min(10),
+                    Constraint::Length(5),
+                ])
+                .areas(area);
 
-            let [sidebar, right] =
-                Layout::horizontal([Constraint::Length(26), Constraint::Min(40)]).areas(middle);
-
-            let [breadcrumb, content] =
-                Layout::vertical([Constraint::Length(3), Constraint::Min(1)]).areas(right);
-
-            LayoutAreas {
-                topbar,
-                sidebar,
-                breadcrumb,
-                content,
-                playerbar,
+                LayoutAreas {
+                    topbar,
+                    sidebar: Rect::default(),
+                    breadcrumb: Rect::default(),
+                    nav,
+                    content: middle,
+                    playerbar,
+                }
             }
-        }
+            NavPosition::Sidebar => {
+                let [topbar, middle, playerbar] = Layout::vertical([
+                    Constraint::Length(3),
+                    Constraint::Min(10),
+                    Constraint::Length(5),
+                ])
+                .areas(area);
+
+                let [sidebar, right] =
+                    Layout::horizontal([Constraint::Length(26), Constraint::Min(40)]).areas(middle);
+
+                let [breadcrumb, content] =
+                    Layout::vertical([Constraint::Length(3), Constraint::Min(1)]).areas(right);
+
+                LayoutAreas {
+                    topbar,
+                    sidebar,
+                    breadcrumb,
+                    nav: Rect::default(),
+                    content,
+                    playerbar,
+                }
+            }
+        },
         Page::Lyrics | Page::Playlist => {
             let [topbar, middle, playerbar] = Layout::vertical([
                 Constraint::Length(3),
@@ -88,6 +111,7 @@ pub fn build_layout(area: Rect, page: Page) -> LayoutAreas {
                 topbar,
                 sidebar: Rect::default(),
                 breadcrumb: Rect::default(),
+                nav: Rect::default(),
                 content: middle,
                 playerbar,
             }
@@ -96,6 +120,7 @@ pub fn build_layout(area: Rect, page: Page) -> LayoutAreas {
             topbar: Rect::default(),
             sidebar: Rect::default(),
             breadcrumb: Rect::default(),
+            nav: Rect::default(),
             content: area,
             playerbar: Rect::default(),
         },

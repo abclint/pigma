@@ -17,6 +17,8 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
 
 **[配置参考](./config.example.toml)**
 
+**终端必须配置并使用支持 Nerd Fonts（如 JetBrainsMono Nerd Font, FiraCode Nerd Font 等）的字体，否则 `\uE0B2`等字符无法正确显示，会变成乱码或方块。**
+
 ## Features
 
 - [x] 流式播放，边听边存
@@ -35,6 +37,7 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
 - [x] 重写playerbar(支持歌曲封面)
 - [x] 云盘上传（缓存文件，本地文件）
 - [x] 音量控制
+- [x] 更多layout支持
 - [ ] styled_text标记语法嵌套
 - [ ] bilibili音源
 - [ ] 新增可选歌词页(沉浸式封面+歌词)
@@ -45,7 +48,6 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
 - [ ] 重构进入程序流程
 - [ ] 歌手信息
 - [ ] 行内简易模式
-- [ ] 更多layout支持(导航置顶模式，简易歌曲列表)
 - [ ] ascii art style 歌词
 - [ ] 支持系统包管理器安装
 
@@ -260,6 +262,15 @@ Any API endpoint can have a `[columns.overrides.{key}]` entry. Available keys:
 | `top_singers`        | singers      | 热门歌手           |
 | `search`             | songs        | 搜索-热搜榜        |
 | `__download__`       | —            | 下载管理           |
+
+### Navigation layout
+
+```toml
+# 导航栏位置: "sidebar" (侧边, 默认) 或 "top" (顶部 topbar 下方, 不显示面包屑)
+nav_position = "sidebar"
+```
+
+`top` 模式下导航项横排为一行，超宽时自动横向滚动，Tab/BackTab 切换导航项不变。
 
 ### Title templates
 
