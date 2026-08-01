@@ -8,6 +8,8 @@ pub struct NavState {
     pub section_states: Vec<ListState>,
     pub focus_section: usize,
     pub subtitle: Option<String>,
+    /// 顶部导航模式下的水平滚动偏移（单元格）。
+    pub scroll_x: u16,
 }
 
 impl NavState {
@@ -34,6 +36,7 @@ impl NavState {
             section_states,
             focus_section: 0,
             subtitle: None,
+            scroll_x: 0,
         }
     }
 

@@ -1,13 +1,13 @@
 pub mod command;
 pub mod content;
 pub mod login;
-pub mod nav;
+pub mod navigation;
 pub mod splash;
 
 pub use command::*;
 pub use content::*;
 pub use login::*;
-pub use nav::*;
+pub use navigation::*;
 pub use splash::*;
 
 use std::cell::RefCell;
