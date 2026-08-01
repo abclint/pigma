@@ -140,7 +140,10 @@ jobs:
         run: |
           mkdir -p ~/.ssh
           ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
-
+      - name: Update Version in PKGBUILD
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          sed -i "s/^pkgver=.*/pkgver=$VERSION/" ./PKGBUILD
       - name: Publish AUR package
         uses: KSXGitHub/github-actions-deploy-aur@v3
         with:
