@@ -109,7 +109,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             login::draw(f, &app.state.navigation.login, &bs, &lay);
         }
         page => {
-            let lay = layout::build_layout(area, page);
+            let lay = layout::build_layout(area, page, app.config.nav_position);
 
             topbar::draw(
                 f,
@@ -130,20 +130,27 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
             match page {
                 Page::Main => {
-                    navigation::draw(
-                        f,
-                        &mut app.state.navigation.nav,
-                        &bs,
-                        &app.config.titles.sidebar,
-                        lay.sidebar,
-                    );
+                    match app.config.nav_position {
+                        crate::config::NavPosition::Sidebar => {
+                            navigation::draw(
+                                f,
+                                &mut app.state.navigation.nav,
+                                &bs,
+                                &app.config.titles.sidebar,
+                                lay.sidebar,
+                            );
 
-                    breadcrumb::render_breadcrumb(
-                        f,
-                        &app.state.navigation.nav,
-                        &bs,
-                        lay.breadcrumb,
-                    );
+                            breadcrumb::render_breadcrumb(
+                                f,
+                                &app.state.navigation.nav,
+                                &bs,
+                                lay.breadcrumb,
+                            );
+                        }
+                        crate::config::NavPosition::Top => {
+                            navigation::draw_top(f, &mut app.state.navigation.nav, &bs, lay.nav);
+                        }
+                    }
 
                     let nav = &app.state.navigation.nav;
                     let current_item = nav

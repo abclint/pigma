@@ -59,6 +59,9 @@ pub struct Config {
     /// 搜索结果数量上限。
     #[serde(default = "default_search_limit")]
     pub search_limit: u16,
+    /// 导航栏位置：sidebar（侧边）或 top（顶部）。
+    #[serde(default)]
+    pub nav_position: NavPosition,
 }
 
 fn default_content_cache_ttl() -> u64 {
@@ -93,6 +96,15 @@ pub enum ProxyTarget {
     Both,
 }
 
+/// 导航栏位置：侧边（默认）或顶部。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum NavPosition {
+    #[default]
+    Sidebar,
+    Top,
+}
+
 fn default_search_limit() -> u16 {
     100
 }
@@ -117,6 +129,7 @@ impl Default for Config {
             proxy: default_proxy(),
             proxy_target: default_proxy_target(),
             search_limit: default_search_limit(),
+            nav_position: NavPosition::default(),
         }
     }
 }
