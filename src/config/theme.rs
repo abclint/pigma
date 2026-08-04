@@ -197,6 +197,77 @@ impl Theme {
         }
     }
 
+    //light theme
+    pub fn solarized_light() -> Self {
+        Self {
+            name: "solarized-light".to_string(),
+            bg: cstr("#fdf6e3"),
+            surface: cstr("#eee8d5"),
+            text: cstr("#657b83"),
+            accent: cstr("#268bd2"),
+            highlight: cstr("#859900"),
+            muted: cstr("#93a1a1"),
+            error: cstr("#dc322f"),
+            warning: cstr("#b58900"),
+        }
+    }
+
+    pub fn catppuccin_latte() -> Self {
+        Self {
+            name: "catppuccin-latte".to_string(),
+            bg: cstr("#eff1f5"),
+            surface: cstr("#e6e9ef"),
+            text: cstr("#4c4f69"),
+            accent: cstr("#7287fd"),
+            highlight: cstr("#40a02b"),
+            muted: cstr("#9ca0b0"),
+            error: cstr("#d20f39"),
+            warning: cstr("#df8e1d"),
+        }
+    }
+
+    pub fn one_light() -> Self {
+        Self {
+            name: "one-light".to_string(),
+            bg: cstr("#fafafa"),
+            surface: cstr("#f0f0f0"),
+            text: cstr("#383a42"),
+            accent: cstr("#4078f2"),
+            highlight: cstr("#50a14f"),
+            muted: cstr("#a0a1a7"),
+            error: cstr("#e45649"),
+            warning: cstr("#c18401"),
+        }
+    }
+
+    pub fn github_light() -> Self {
+        Self {
+            name: "github-light".to_string(),
+            bg: cstr("#ffffff"),
+            surface: cstr("#f6f8fa"),
+            text: cstr("#24292f"),
+            accent: cstr("#0969da"),
+            highlight: cstr("#2da44e"),
+            muted: cstr("#57606a"),
+            error: cstr("#cf222e"),
+            warning: cstr("#d4a72c"),
+        }
+    }
+
+    pub fn gruvbox_light() -> Self {
+        Self {
+            name: "gruvbox-light".to_string(),
+            bg: cstr("#fbf1c7"),
+            surface: cstr("#ebdbb2"),
+            text: cstr("#3c3836"),
+            accent: cstr("#d65d0e"),
+            highlight: cstr("#98971a"),
+            muted: cstr("#928374"),
+            error: cstr("#cc241d"),
+            warning: cstr("#d79921"),
+        }
+    }
+
     /// Look up a theme color field by name (e.g. "accent", "highlight", "muted").
     pub fn field_color(&self, name: &str) -> Color {
         match name {
@@ -232,6 +303,11 @@ fn builtin_themes() -> &'static HashMap<String, Theme> {
             Theme::monokai(),
             Theme::rose_pine(),
             Theme::kanagawa(),
+            Theme::github_light(),
+            Theme::gruvbox_light(),
+            Theme::one_light(),
+            Theme::catppuccin_latte(),
+            Theme::solarized_light(),
         ];
         themes
             .into_iter()
