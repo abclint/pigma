@@ -1,11 +1,17 @@
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use musicx::{MusicFinder, Quality, SearchQuery};
+use musicx::{MusicFinder, PlayUrlResult, Quality, SearchQuery, Song};
 use ncm_api::{NcmError, SongInfo, SongQuality};
-use stream_download::{Settings, StreamDownload};
+use stream_download::http::HttpStream;
+use stream_download::{Settings, StreamDownload, StreamPhase};
+use tokio::sync::mpsc;
 
 use super::player::{AudioInput, SharedReader};
+use super::stream_client::HeadersClient;
 use crate::cache::CacheManager;
+use crate::event::{Event, PlaybackEvent};
 #[cfg(target_os = "linux")]
 use crate::playback::mem_rss_kb;
 use crate::service::ApiService;
@@ -18,24 +24,49 @@ pub struct AudioSource {
     quality: SongQuality,
     finder: Arc<MusicFinder>,
     musicx_enabled: bool,
+    /// HTTP client used for streaming play URLs (proxy + headers applied).
+    stream_client: reqwest::Client,
+    event_tx: mpsc::UnboundedSender<Event>,
+    /// Original musicx songs for search results, keyed by the synthetic
+    /// `SongInfo` id so playback can resolve the source via the same provider.
+    pub(crate) musicx_songs: Arc<Mutex<HashMap<u64, Arc<Song>>>>,
 }
 
 impl AudioSource {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         service: ApiService,
         cache: CacheManager,
         quality: SongQuality,
-        _proxy: String,
-        finder: MusicFinder,
+        stream_client: reqwest::Client,
+        finder: Arc<MusicFinder>,
         musicx_enabled: bool,
+        musicx_songs: Arc<Mutex<HashMap<u64, Arc<Song>>>>,
+        event_tx: mpsc::UnboundedSender<Event>,
     ) -> Self {
         Self {
             service,
             cache,
             quality,
-            finder: Arc::new(finder),
+            finder,
             musicx_enabled,
+            stream_client,
+            event_tx,
+            musicx_songs,
         }
+    }
+
+    /// Build stream-download settings that notify the UI once the stream has
+    /// finished caching to disk, so the playback bar can switch to the
+    /// "cached" color.
+    fn download_settings(&self, song_id: u64) -> Settings<HttpStream<HeadersClient>> {
+        let event_tx = self.event_tx.clone();
+        let sent = Arc::new(AtomicBool::new(false));
+        Settings::default().on_progress(move |_, state, _| {
+            if state.phase == StreamPhase::Complete && !sent.swap(true, Ordering::SeqCst) {
+                let _ = event_tx.send(PlaybackEvent::Cached(song_id).into());
+            }
+        })
     }
 
     /// Derive a file extension from a streaming URL.
@@ -69,6 +100,33 @@ impl AudioSource {
         }
     }
 
+    /// Stream a resolved play URL through the cache layer.
+    async fn stream_play_url(
+        &self,
+        song: &SongInfo,
+        play: PlayUrlResult,
+    ) -> Result<AudioInput, String> {
+        let url = url::Url::parse(&play.url).map_err(|e| format!("musicx URL解析失败: {e}"))?;
+
+        let ext = Self::ext_from_url(&play.url);
+        let provider = self
+            .cache
+            .create_provider(song, ext)
+            .map_err(|e| format!("缓存创建失败: {e}"))?;
+
+        let stream = HttpStream::new(HeadersClient::new(self.stream_client.clone()), url)
+            .await
+            .map_err(|e| format!("musicx 流初始化失败: {e}"))?;
+
+        let reader = StreamDownload::from_stream(stream, provider, self.download_settings(song.id))
+            .await
+            .map_err(|e| format!("musicx 流下载失败: {e}"))?;
+
+        self.cache.mark_cached(song, ext);
+
+        Ok(SharedReader(Arc::new(Mutex::new(Box::new(reader)))))
+    }
+
     /// Search all configured musicx sources for the best playable match and
     /// stream it.
     async fn musicx_fallback(&self, song: &SongInfo) -> Result<AudioInput, String> {
@@ -90,28 +148,35 @@ impl AudioSource {
             found.source
         );
 
-        let url = url::Url::parse(&play.url).map_err(|e| format!("musicx URL解析失败: {e}"))?;
+        self.stream_play_url(song, play).await
+    }
 
-        let ext = Self::ext_from_url(&play.url);
-        let provider = self
-            .cache
-            .create_provider(song, ext)
-            .map_err(|e| format!("缓存创建失败: {e}"))?;
+    /// Resolve a musicx search result directly via the provider that found it.
+    async fn resolve_musicx_song(&self, song: &SongInfo) -> Result<AudioInput, String> {
+        let msong = self
+            .musicx_songs
+            .lock()
+            .map_err(|_| "musicx 歌曲注册表损坏".to_string())?
+            .get(&song.id)
+            .cloned()
+            .ok_or_else(|| "搜索结果音源信息丢失".to_string())?;
 
-        let reader = StreamDownload::new_http(url, provider, Settings::default())
+        let play = self
+            .finder
+            .get_play_url_for_song(&msong, Some(Self::to_musicx_quality(self.quality)))
             .await
-            .map_err(|e| format!("musicx 流下载失败: {e}"))?;
+            .map_err(|e| format!("获取音源失败 ({}): {e}", msong.source))?;
 
         #[cfg(target_os = "linux")]
         log::info!(
-            "[HEAP] after StreamDownload::new_http (id={}): {} kB",
+            "[HEAP] after get_play_url_for_song (id={}): {} kB — {} ({})",
             song.id,
-            mem_rss_kb()
+            mem_rss_kb(),
+            msong.name,
+            msong.source
         );
 
-        self.cache.mark_cached(song, ext);
-
-        Ok(SharedReader(Arc::new(Mutex::new(Box::new(reader)))))
+        self.stream_play_url(song, play).await
     }
 
     /// Try to resolve a song from NCM streaming.
@@ -145,7 +210,11 @@ impl AudioSource {
             .create_provider(song, ext)
             .map_err(|e| format!("缓存创建失败: {e}"))?;
 
-        let reader = StreamDownload::new_http(url, provider, Settings::default())
+        let stream = HttpStream::new(HeadersClient::new(self.stream_client.clone()), url)
+            .await
+            .map_err(|e| format!("流初始化失败: {e}"))?;
+
+        let reader = StreamDownload::from_stream(stream, provider, self.download_settings(song.id))
             .await
             .map_err(|e| format!("流下载失败: {e}"))?;
 
@@ -155,6 +224,30 @@ impl AudioSource {
     }
 
     pub async fn resolve(&self, song: &SongInfo) -> Result<AudioInput, String> {
+        // musicx search results carry a flagged synthetic id: they have no NCM
+        // source, so resolve via the provider that found the song (serve from
+        // cache first), falling back to keyword re-search if the original
+        // source info is unavailable.
+        if crate::utils::musicx::is_musicx_song_id(song.id) {
+            if let Some(ext) = self.cache.find_cached_extension(song.id) {
+                let cache = self.cache.clone();
+                let song_id = song.id;
+                let ext = ext.to_string();
+                let file = tokio::task::spawn_blocking(move || cache.open_cached(song_id, &ext))
+                    .await
+                    .map_err(|e| format!("无法打开缓存文件: {e}"))?
+                    .map_err(|e| format!("无法打开缓存文件: {e}"))?;
+                return Ok(SharedReader(Arc::new(Mutex::new(Box::new(file)))));
+            }
+            match self.resolve_musicx_song(song).await {
+                Ok(input) => return Ok(input),
+                Err(e) => {
+                    log::warn!("musicx 直接解析失败，改用兜底搜索: {e}");
+                    return self.musicx_fallback(song).await;
+                }
+            }
+        }
+
         // Free songs: only use local file if the path actually exists
         if song.copyright == ncm_api::SongCopyright::Free {
             let path = std::path::Path::new(&song.album);
