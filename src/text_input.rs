@@ -115,10 +115,10 @@ impl TextInput {
     ) {
         let border_color = if focused { colors.accent } else { colors.muted };
 
-        let display = if password {
-            "*".repeat(self.value.chars().count())
+        let display: std::borrow::Cow<'_, str> = if password {
+            std::borrow::Cow::Owned("*".repeat(self.value.chars().count()))
         } else {
-            self.value.clone()
+            std::borrow::Cow::Borrowed(&self.value)
         };
 
         let text_color = if focused { colors.text } else { colors.muted };

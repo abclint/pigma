@@ -6,9 +6,9 @@ mod queue;
 mod scan;
 mod source;
 mod storage;
-pub mod types;
-
-use std::sync::Arc;
+mod stream_client;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 /// Read the current RSS in KB from /proc/self/status.
@@ -26,6 +26,8 @@ pub(crate) fn mem_rss_kb() -> u64 {
 }
 
 use ncm_api::{SongInfo, SongQuality};
+use ratatui_image::protocol::StatefulProtocol;
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
 use crate::event::{Event, PlaybackEvent};
@@ -36,9 +38,181 @@ use self::mode::Strategy;
 use self::queue::PlaylistQueue;
 use self::source::AudioSource;
 use self::storage::PlaylistStorage;
-use self::types::{LyricLine, PlayMode, PlaybackState};
 
-pub use self::types::{PlayMode as EnginePlayMode, PlaybackState as EngineState};
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum PlayMode {
+    Sequential,
+    RepeatOne,
+    RepeatAll,
+    Shuffle,
+    Heartbeat { playlist_id: u64 },
+}
+
+#[derive(Debug, Clone)]
+pub struct LyricLine {
+    pub time: Duration,
+    pub text: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct PlaybackState {
+    pub progress: f64,
+    pub volume: f64,
+    pub paused: bool,
+    pub playing: bool,
+    pub seeking: bool,
+    pub current_song: Option<Arc<SongInfo>>,
+    pub error: Option<String>,
+    pub lyrics: Option<Vec<LyricLine>>,
+    pub translated_lyrics: Option<Vec<LyricLine>>,
+    pub mode: PlayMode,
+    pub cached: bool,
+    pub cover: CoverState,
+}
+
+impl Default for PlaybackState {
+    fn default() -> Self {
+        Self {
+            progress: 0.0,
+            volume: 0.65,
+            paused: false,
+            playing: false,
+            seeking: false,
+            current_song: None,
+            error: None,
+            lyrics: None,
+            translated_lyrics: None,
+            mode: PlayMode::Sequential,
+            cached: false,
+            cover: CoverState::default(),
+        }
+    }
+}
+
+impl PlaybackState {
+    pub fn on_started(&mut self) {
+        self.error = None;
+        self.paused = false;
+        self.playing = true;
+        self.lyrics = None;
+        self.translated_lyrics = None;
+    }
+
+    pub fn on_progress(&mut self, position: Duration, total: Option<Duration>) {
+        self.seeking = false;
+        let total_secs = match total {
+            Some(t) => t.as_secs_f64(),
+            None => self
+                .current_song
+                .as_ref()
+                .map(|s| s.duration as f64 / 1000.0)
+                .unwrap_or(0.0),
+        };
+        if total_secs > 0.0 {
+            self.progress = (position.as_secs_f64() / total_secs).clamp(0.0, 1.0);
+        }
+    }
+
+    /// Resets progress. Returns `true` if the caller should advance to the next song.
+    pub fn on_finished(&mut self) -> bool {
+        self.progress = 0.0;
+        self.playing
+    }
+
+    pub fn clear_after_stopped(&mut self) {
+        self.current_song = None;
+        self.error = None;
+        self.paused = false;
+    }
+
+    pub fn on_error(&mut self, err: String) {
+        log::error!("Playback error: {}", err);
+        // buffer underrun/overrun is transient — rodio recovers automatically
+        if err.contains("buffer underrun") || err.contains("overrun") {
+            return;
+        }
+        self.error = Some(err);
+    }
+
+    pub fn on_lyrics_loaded(
+        &mut self,
+        song_id: u64,
+        lyrics: Vec<LyricLine>,
+        translated_lyrics: Vec<LyricLine>,
+    ) {
+        if let Some(song) = &self.current_song
+            && song.id == song_id
+        {
+            self.lyrics = Some(lyrics);
+            self.translated_lyrics = Some(translated_lyrics);
+        }
+    }
+}
+
+/// Cover image state shared with async loaders. `protocol` holds the decoded
+/// image; `song_id` records which song the cover belongs to so a slow loader
+/// from a previously played song can't overwrite the current cover.
+pub struct CoverState {
+    pub protocol: Arc<Mutex<Option<StatefulProtocol>>>,
+    pub song_id: Arc<Mutex<Option<u64>>>,
+}
+
+impl std::fmt::Debug for CoverState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CoverState")
+            .field(
+                "has_cover",
+                &self.protocol.lock().map(|g| g.is_some()).unwrap_or(false),
+            )
+            .finish()
+    }
+}
+
+impl Clone for CoverState {
+    fn clone(&self) -> Self {
+        Self {
+            protocol: Arc::clone(&self.protocol),
+            song_id: Arc::clone(&self.song_id),
+        }
+    }
+}
+
+impl Default for CoverState {
+    fn default() -> Self {
+        Self {
+            protocol: Arc::new(Mutex::new(None)),
+            song_id: Arc::new(Mutex::new(None)),
+        }
+    }
+}
+
+pub fn parse_lyric_lines(raw: &[String]) -> Vec<LyricLine> {
+    let mut lines: Vec<LyricLine> = raw
+        .iter()
+        .filter_map(|line| {
+            let rest = line.strip_prefix('[')?;
+            let close = rest.find(']')?;
+            let ts = &rest[..close];
+            let text = rest[close + 1..].trim().to_string();
+            if text.is_empty() {
+                return None;
+            }
+            let parts: Vec<&str> = ts.split(':').collect();
+            if parts.len() < 2 {
+                return None;
+            }
+            let mins: f64 = parts[0].parse().ok()?;
+            let secs: f64 = parts[1].parse().ok()?;
+            let time = Duration::from_secs_f64(mins * 60.0 + secs);
+            Some(LyricLine { time, text })
+        })
+        .collect();
+    // Only sort if not already sorted (LRC files are typically pre-sorted)
+    if lines.windows(2).any(|w| w[0].time > w[1].time) {
+        lines.sort_by_key(|l| l.time);
+    }
+    lines
+}
 
 /// Orchestrates audio playback, queue management, and player strategies.
 pub struct PlaybackEngine {
@@ -55,14 +229,16 @@ pub struct PlaybackEngine {
 }
 
 impl PlaybackEngine {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         event_tx: mpsc::UnboundedSender<Event>,
         service: ApiService,
         cache: crate::cache::CacheManager,
         quality: SongQuality,
-        proxy: String,
-        finder: musicx::MusicFinder,
+        stream_client: reqwest::Client,
+        finder: Arc<musicx::MusicFinder>,
         musicx_enabled: bool,
+        musicx_songs: Arc<std::sync::Mutex<HashMap<u64, Arc<musicx::Song>>>>,
     ) -> Self {
         let storage = PlaylistStorage::new();
         let mut this = Self {
@@ -74,9 +250,11 @@ impl PlaybackEngine {
                 service.clone(),
                 cache,
                 quality,
-                proxy,
+                stream_client,
                 finder,
                 musicx_enabled,
+                musicx_songs,
+                event_tx.clone(),
             ),
             controller: PlaybackHandle::new(event_tx.clone()),
             event_tx: event_tx.clone(),
@@ -267,6 +445,9 @@ impl PlaybackEngine {
         self.state.paused = false;
         self.state.current_song = None;
         self.state.progress = 0.0;
+        if let Ok(mut registry) = self.source.musicx_songs.lock() {
+            registry.clear();
+        }
         self.save_session();
     }
 
@@ -322,7 +503,7 @@ impl PlaybackEngine {
     }
 
     pub fn set_mode(&mut self, mode: PlayMode) {
-        self.state.mode = mode.clone();
+        self.state.mode = mode;
         self.strategy =
             mode::create_strategy(&self.state.mode, self.queue.len(), self.queue.current_index);
     }
@@ -356,16 +537,15 @@ impl PlaybackEngine {
         if err.contains("buffer underrun") || err.contains("overrun") {
             return;
         }
-        self.state.on_error(err.clone());
+        // If error is from cached file, delete cache and retry same song
+        let retryable = err.starts_with("无法打开缓存文件") || err.starts_with("decode:");
+        self.state.on_error(err);
         self.consecutive_errors += 1;
         if self.consecutive_errors >= 3 {
             self.stop();
             return;
         }
-        // If error is from cached file, delete cache and retry same song
-        if (err.starts_with("无法打开缓存文件") || err.starts_with("decode:"))
-            && let Some(song) = self.state.current_song.as_ref()
-        {
+        if retryable && let Some(song) = self.state.current_song.as_ref() {
             let song_id = song.id;
             let cache = self.source.cache.clone();
             tokio::task::spawn_blocking(move || {
@@ -397,6 +577,17 @@ impl PlaybackEngine {
             self.state.volume,
             self.state.progress,
         );
+        let musicx_songs = self
+            .source
+            .musicx_songs
+            .lock()
+            .map(|m| {
+                m.iter()
+                    .map(|(k, v)| (*k, (**v).clone()))
+                    .collect::<std::collections::HashMap<_, _>>()
+            })
+            .unwrap_or_default();
+        self.source.cache.set_musicx_songs(&musicx_songs);
         self.source.cache.cleanup_index();
         self.source.cache.flush_index();
     }
@@ -432,15 +623,25 @@ impl PlaybackEngine {
                 history: saved.history.into_iter().map(Arc::new).collect(),
                 current_index: saved.current_index,
             };
-            self.state.mode = saved.mode.clone();
             self.state.volume = saved.volume;
             self.strategy =
                 mode::create_strategy(&saved.mode, self.queue.len(), self.queue.current_index);
+            self.state.mode = saved.mode;
             self.controller.set_volume(saved.volume as f32);
 
             if saved.current_index.is_some() {
                 self.state.current_song = self.queue.current_song().cloned();
                 self.state.progress = saved.progress;
+            }
+
+            // Restore the musicx registry so lyric/cover fallback works for
+            // search-result songs after a restart. It is persisted in the
+            // cache index (`cache_index.json`), not the queue file.
+            let musicx_songs = self.source.cache.musicx_songs_snapshot();
+            if !musicx_songs.is_empty()
+                && let Ok(mut registry) = self.source.musicx_songs.lock()
+            {
+                registry.extend(musicx_songs.into_iter().map(|(k, v)| (k, Arc::new(v))));
             }
         }
     }
@@ -473,13 +674,12 @@ impl PlaybackEngine {
             log::error!("Failed to send PlaybackStarted: receiver dropped");
         }
 
-        let song_name = song.name.clone();
         let song_id = song.id;
         tokio::spawn(async move {
             #[cfg(target_os = "linux")]
             log::info!(
                 "[HEAP] before resolve {} (id={}): {} kB",
-                song_name,
+                song.name,
                 song_id,
                 mem_rss_kb()
             );
@@ -489,7 +689,7 @@ impl PlaybackEngine {
                     #[cfg(target_os = "linux")]
                     log::info!(
                         "[HEAP] after resolve FAIL {} (id={}): {} kB",
-                        song_name,
+                        song.name,
                         song_id,
                         mem_rss_kb()
                     );
@@ -506,7 +706,7 @@ impl PlaybackEngine {
             #[cfg(target_os = "linux")]
             log::info!(
                 "[HEAP] after resolve OK {} (id={}): {} kB",
-                song_name,
+                song.name,
                 song_id,
                 mem_rss_kb()
             );

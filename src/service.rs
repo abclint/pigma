@@ -153,13 +153,12 @@ impl ApiService {
         match self.client.song_lyric(song_id).await {
             Ok(lyrics) => {
                 let cache = self.cache.clone();
-                let lyrics_clone = lyrics.clone();
                 tokio::task::spawn_blocking(move || {
-                    cache.save_lyrics_cache(song_id, &lyrics_clone);
+                    cache.save_lyrics_cache(song_id, &lyrics);
+                    lyrics
                 })
                 .await
-                .ok();
-                Some(lyrics)
+                .ok()
             }
             Err(e) => {
                 log::error!("Failed to fetch lyrics for {song_id}: {e}");

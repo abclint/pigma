@@ -4,8 +4,8 @@ use ncm_api::SongInfo;
 
 use crate::event::PlaybackEvent;
 
+use super::PlayMode;
 use super::PlaybackEngine;
-use super::types::PlayMode;
 
 const MAX_HEARTBEAT_SONGS: usize = 500;
 const KEEP_RECENT: usize = 100;
