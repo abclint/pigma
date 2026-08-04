@@ -1,17 +1,20 @@
 pub mod command;
 pub mod content;
+pub mod help;
 pub mod login;
 pub mod navigation;
 pub mod splash;
 
 pub use command::*;
 pub use content::*;
+pub use help::*;
 pub use login::*;
 pub use navigation::*;
 pub use splash::*;
 
 use std::cell::RefCell;
-use std::sync::{Arc, OnceLock};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use ncm_api::LoginInfo;
 use ratatui::layout::Rect;
@@ -26,7 +29,7 @@ use crate::{
 
 use crate::playback::PlaybackEngine;
 
-pub use crate::playback::{EnginePlayMode, EngineState as PlaybackState};
+pub use crate::playback::PlaybackState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
@@ -88,6 +91,9 @@ pub struct NavigationState {
     pub search: SearchState,
     pub pagination: Option<PaginationInfo>,
     pub generation: u64,
+    /// True when the current `Songs` content is a search result (Enter plays
+    /// only the selected song instead of appending the whole list to the queue).
+    pub content_is_search: bool,
     /// Cached rendered rows to avoid per-frame serde serialization.
     /// Invalidated when `content` is replaced.
     pub content_rows_cache: RefCell<Option<Vec<Vec<String>>>>,
@@ -151,12 +157,79 @@ impl NavigationState {
     }
 }
 
+/// A search backend selectable in the search bar. `Ncm` is the default and
+/// searches NetEase Cloud Music; the rest delegate to musicx providers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SearchProvider {
+    #[default]
+    Ncm,
+    Kugou,
+    Kuwo,
+    BiliVideo,
+    Youtube,
+}
+
+impl SearchProvider {
+    pub fn display_name(self) -> &'static str {
+        match self {
+            Self::Ncm => "netease",
+            Self::Kugou => "kugou",
+            Self::Kuwo => "kuwo",
+            Self::BiliVideo => "bilivideo",
+            Self::Youtube => "youtube",
+        }
+    }
+
+    pub fn to_musicx(self) -> Option<musicx::MusicSource> {
+        match self {
+            Self::Ncm => None,
+            Self::Kugou => Some(musicx::MusicSource::Kugou),
+            Self::Kuwo => Some(musicx::MusicSource::Kuwo),
+            Self::BiliVideo => Some(musicx::MusicSource::BiliVideo),
+            Self::Youtube => Some(musicx::MusicSource::Youtube),
+        }
+    }
+
+    pub fn from_musicx(source: musicx::MusicSource) -> Self {
+        match source {
+            musicx::MusicSource::Kugou => Self::Kugou,
+            musicx::MusicSource::Kuwo => Self::Kuwo,
+            musicx::MusicSource::BiliVideo => Self::BiliVideo,
+            musicx::MusicSource::Youtube => Self::Youtube,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct SearchState {
     pub active: bool,
     pub input: TextInput,
     pub filter_queue_only: bool,
     pub unfiltered_songs: Option<Vec<Arc<ncm_api::SongInfo>>>,
+    /// Available providers in display order (网易云 first, then configured
+    /// musicx sources). Populated from config at startup.
+    pub providers: Vec<SearchProvider>,
+    /// Currently selected search provider.
+    pub provider: SearchProvider,
+}
+
+impl SearchState {
+    pub fn cycle_provider(&mut self, forward: bool) {
+        if self.providers.is_empty() {
+            return;
+        }
+        let idx = self
+            .providers
+            .iter()
+            .position(|p| *p == self.provider)
+            .unwrap_or(0);
+        let len = self.providers.len();
+        self.provider = if forward {
+            self.providers[(idx + 1) % len]
+        } else {
+            self.providers[(idx + len - 1) % len]
+        };
+    }
 }
 
 pub struct State {
@@ -166,6 +239,7 @@ pub struct State {
     pub splash: SplashState,
     pub navigation: NavigationState,
     pub command_panel: CommandPanel,
+    pub help: HelpState,
     pub offline: bool,
     pub tick: u64,
     pub last_tick: std::time::Instant,
@@ -187,6 +261,12 @@ pub struct App {
     pub theme_registry: ThemeRegistry,
     pub service: ApiService,
     pub picker: ratatui_image::picker::Picker,
+    /// Blocking HTTP client for cover downloads (honours the proxy config).
+    pub cover_http: reqwest::blocking::Client,
+    /// Shared musicx finder used for per-provider search and playback fallback.
+    pub finder: Arc<musicx::MusicFinder>,
+    /// Original musicx songs for search results, keyed by synthetic song id.
+    pub musicx_songs: Arc<Mutex<HashMap<u64, Arc<musicx::Song>>>>,
 }
 
 impl App {
@@ -205,10 +285,10 @@ impl App {
             .collect();
 
         let theme_children: Vec<CommandItem> = theme_names
-            .iter()
-            .map(|name| CommandItem::Action {
-                name: name.clone(),
-                action: CommandAction::SwitchTheme(name.clone()),
+            .into_iter()
+            .map(|name| {
+                let action = CommandAction::SwitchTheme(name.clone());
+                CommandItem::Action { name, action }
             })
             .collect();
 
@@ -226,23 +306,43 @@ impl App {
         let mut command_panel = CommandPanel::new();
         command_panel.levels = vec![commands];
 
-        let (ncm_proxy, yt_proxy) = if config.proxy.is_empty() {
-            (String::new(), String::new())
+        let proxy = config.proxy.as_str();
+        let empty = proxy.is_empty();
+        use crate::config::ProxyTarget;
+        // `normal`（国内默认）：仅 YouTube 走代理；`reversed`（海外）：除 YouTube
+        // 外全部走代理；`both`：全部走代理。
+        let ncm_proxy = if !empty
+            && matches!(
+                config.proxy_target,
+                ProxyTarget::Reversed | ProxyTarget::Both
+            ) {
+            proxy
         } else {
-            match config.proxy_target {
-                crate::config::ProxyTarget::Ncm => (config.proxy.clone(), String::new()),
-                crate::config::ProxyTarget::Yt => (String::new(), config.proxy.clone()),
-                crate::config::ProxyTarget::Both => (config.proxy.clone(), config.proxy.clone()),
-            }
+            ""
         };
+        let search_proxy = if !empty
+            && matches!(
+                config.proxy_target,
+                ProxyTarget::Reversed | ProxyTarget::Both
+            ) {
+            proxy
+        } else {
+            ""
+        };
+        let youtube_proxy =
+            if !empty && matches!(config.proxy_target, ProxyTarget::Normal | ProxyTarget::Both) {
+                proxy
+            } else {
+                ""
+            };
+        let stream_proxy = search_proxy;
 
         let api = if ncm_proxy.is_empty() {
             Arc::new(ncm_api::NcmClient::new()?)
         } else {
-            Arc::new(ncm_api::NcmClient::builder().proxy(&ncm_proxy).build()?)
+            Arc::new(ncm_api::NcmClient::builder().proxy(ncm_proxy).build()?)
         };
 
-        let nav_config = config.navigation.clone();
         let quality = ncm_api::SongQuality::from_level(&config.cache.quality)
             .unwrap_or(ncm_api::SongQuality::Higher);
 
@@ -260,9 +360,8 @@ impl App {
         let base_dir = dirs::cache_dir()
             .unwrap_or_else(|| std::path::PathBuf::from("."))
             .join("pigma");
-        let proxy = yt_proxy;
 
-        let finder = {
+        let finder = Arc::new({
             let mut sources: Vec<musicx::MusicSource> = Vec::new();
             for name in &config.source_fallback.providers {
                 let source = match name.as_str() {
@@ -279,9 +378,23 @@ impl App {
             let search_config = musicx::SearchConfig::new()
                 .with_providers(sources)
                 .with_timeout(config.source_fallback.timeout_ms)
-                .with_proxy(proxy.clone());
+                .with_search_proxy(search_proxy.to_string())
+                .with_youtube_proxy(youtube_proxy.to_string());
             musicx::MusicFinder::new(search_config)
-        };
+        });
+
+        // Search providers offered in the search bar: 网易云 always first,
+        // followed by the configured musicx fallback sources.
+        let mut search_providers = vec![SearchProvider::Ncm];
+        for source in finder
+            .sources()
+            .iter()
+            .map(|s| SearchProvider::from_musicx(*s))
+        {
+            if !search_providers.contains(&source) {
+                search_providers.push(source);
+            }
+        }
 
         let cache = crate::cache::CacheManager::new(
             cache_dir,
@@ -304,7 +417,61 @@ impl App {
             None => {}
         }
 
+        let stream_client = {
+            let mut builder = reqwest::Client::builder();
+            if !stream_proxy.is_empty() {
+                builder = builder
+                    .proxy(reqwest::Proxy::all(stream_proxy).map_err(color_eyre::Report::msg)?);
+            }
+            builder.build()?
+        };
+
+        let cover_http = {
+            let mut builder = reqwest::blocking::Client::builder();
+            if !search_proxy.is_empty() {
+                builder = builder
+                    .proxy(reqwest::Proxy::all(search_proxy).map_err(color_eyre::Report::msg)?);
+            }
+            builder.build()?
+        };
+
         let musicx_enabled = config.source_fallback.enabled;
+        let musicx_songs: Arc<Mutex<HashMap<u64, Arc<musicx::Song>>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        let mut state = State {
+            running: true,
+            events,
+            border,
+            splash: SplashState::default(),
+            navigation: NavigationState {
+                page: Page::Splash,
+                login: LoginState::default(),
+                user: None,
+                nav: NavState::from_config(&config.navigation),
+                content: Arc::new(ContentState::Empty),
+                history: Vec::new(),
+                content_selected: 0,
+                content_column_selected: 0,
+                table_mode: TableMode::Row,
+                table_state: TableState::default(),
+                playlist_selected: 0,
+                search: SearchState::default(),
+                pagination: None,
+                generation: 0,
+                content_is_search: false,
+                content_rows_cache: RefCell::new(None),
+                title_cache: RefCell::new(None),
+            },
+            command_panel,
+            help: HelpState::default(),
+            offline: false,
+            tick: 0,
+            last_tick: std::time::Instant::now(),
+            toast_msg: String::new(),
+            toast_time: None,
+            playerbar_area: Rect::default(),
+        };
+        state.navigation.search.providers = search_providers;
         Ok(Self {
             config,
             service: service.clone(),
@@ -313,43 +480,17 @@ impl App {
                 service,
                 cache,
                 quality,
-                proxy,
-                finder,
+                stream_client,
+                Arc::clone(&finder),
                 musicx_enabled,
+                Arc::clone(&musicx_songs),
             ),
-            state: State {
-                running: true,
-                events,
-                border,
-                splash: SplashState::default(),
-                navigation: NavigationState {
-                    page: Page::Splash,
-                    login: LoginState::default(),
-                    user: None,
-                    nav: NavState::from_config(&nav_config),
-                    content: Arc::new(ContentState::Empty),
-                    history: Vec::new(),
-                    content_selected: 0,
-                    content_column_selected: 0,
-                    table_mode: TableMode::Row,
-                    table_state: TableState::default(),
-                    playlist_selected: 0,
-                    search: SearchState::default(),
-                    pagination: None,
-                    generation: 0,
-                    content_rows_cache: RefCell::new(None),
-                    title_cache: RefCell::new(None),
-                },
-                command_panel,
-                offline: false,
-                tick: 0,
-                last_tick: std::time::Instant::now(),
-                toast_msg: String::new(),
-                toast_time: None,
-                playerbar_area: Rect::default(),
-            },
+            state,
             theme_registry,
             picker,
+            cover_http,
+            finder,
+            musicx_songs,
         })
     }
 
@@ -388,9 +529,10 @@ impl App {
                 ));
             }
             CommandAction::SwitchTheme(name) => {
-                self.config.default_theme = name.clone();
+                let msg = format!("THEME: {name}");
+                self.config.default_theme = name;
                 self.config.save();
-                self.toast(format!("THEME: {}", name));
+                self.toast(msg);
             }
         }
     }

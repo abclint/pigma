@@ -3,6 +3,7 @@ mod breadcrumb;
 mod command_panel;
 mod content;
 mod gradient_line_gauge;
+mod help;
 mod login;
 mod lyrics;
 mod navigation;
@@ -119,6 +120,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 lay.topbar,
             );
             app.state.playerbar_area = lay.playerbar;
+            let is_sixel = app.picker.protocol_type() == ratatui_image::picker::ProtocolType::Sixel;
             playerbar::draw(
                 f,
                 &app.playback.state,
@@ -126,19 +128,22 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 &bs,
                 &app.config.playerbar,
                 lay.playerbar,
+                is_sixel,
             );
 
             match page {
                 Page::Main => {
                     match app.config.navigation_position {
                         crate::config::NavPosition::Left | crate::config::NavPosition::Right => {
-                            navigation::draw(
-                                f,
-                                &mut app.state.navigation.nav,
-                                &bs,
-                                &app.config.titles.sidebar,
-                                lay.sidebar,
-                            );
+                            if lay.sidebar.width > 0 {
+                                navigation::draw(
+                                    f,
+                                    &mut app.state.navigation.nav,
+                                    &bs,
+                                    &app.config.titles.sidebar,
+                                    lay.sidebar,
+                                );
+                            }
 
                             breadcrumb::render_breadcrumb(
                                 f,
@@ -235,6 +240,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     if app.state.command_panel.open {
         command_panel::draw(f, app, area);
+    }
+
+    if app.state.help.open {
+        help::draw(f, app, area);
     }
 
     draw_toast(f, app, colors);
