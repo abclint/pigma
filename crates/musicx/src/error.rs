@@ -26,6 +26,9 @@ pub enum MusicError {
     #[error("Play URL not available")]
     NoPlayUrl,
 
+    #[error("Lyrics not available")]
+    NoLyrics,
+
     #[error("Encryption error: {0}")]
     Encryption(String),
 

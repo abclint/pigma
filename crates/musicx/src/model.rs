@@ -11,6 +11,8 @@ pub struct Song {
     pub source: MusicSource,
     pub quality: Option<Quality>,
     pub url: Option<String>,
+    /// Cover image URL (empty when the provider has none).
+    pub pic_url: String,
     pub raw_data: serde_json::Value,
 }
 
@@ -76,7 +78,7 @@ impl SearchQuery {
         Self {
             keyword: keyword.into(),
             page: Some(1),
-            page_size: Some(10),
+            page_size: Some(20),
             duration: None,
         }
     }

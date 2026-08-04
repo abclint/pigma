@@ -16,10 +16,16 @@ pub struct KugouProvider {
 
 impl KugouProvider {
     pub fn new(enable_flac: bool) -> Self {
-        let client = Client::builder()
-            .user_agent("Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36")
-            .build()
-            .expect("Failed to create HTTP client");
+        Self::with_proxy(enable_flac, "")
+    }
+
+    pub fn with_proxy(enable_flac: bool, proxy_url: &str) -> Self {
+        let mut builder = Client::builder()
+            .user_agent("Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36");
+        if !proxy_url.is_empty() {
+            builder = builder.proxy(reqwest::Proxy::all(proxy_url).expect("invalid proxy url"));
+        }
+        let client = builder.build().expect("Failed to create HTTP client");
         Self {
             client,
             enable_flac,
@@ -177,7 +183,7 @@ impl MusicProvider for KugouProvider {
                 ("page", query.page.unwrap_or(1).to_string().as_str()),
                 (
                     "pagesize",
-                    query.page_size.unwrap_or(10).to_string().as_str(),
+                    query.page_size.unwrap_or(20).to_string().as_str(),
                 ),
             ])
             .send()
@@ -207,7 +213,7 @@ impl MusicProvider for KugouProvider {
                 let duration = item["duration"].as_u64().unwrap_or(0) * 1000;
 
                 Some(Song {
-                    id: hash.clone(),
+                    id: hash,
                     name,
                     artists: vec![Artist {
                         id: "".to_string(),
@@ -225,6 +231,7 @@ impl MusicProvider for KugouProvider {
                     source: MusicSource::Kugou,
                     quality: Some(self.pick_quality(item)),
                     url: None,
+                    pic_url: String::new(),
                     raw_data: item.clone(),
                 })
             })
@@ -249,6 +256,60 @@ impl MusicProvider for KugouProvider {
 
     fn priority(&self) -> u8 {
         10
+    }
+
+    async fn get_lyrics(&self, song: &Song) -> Result<Option<String>> {
+        let hash = match self.pick_hash(&song.raw_data) {
+            Some(h) => h,
+            None => return Ok(None),
+        };
+        let artist = song.artists.first().map(|a| a.name.as_str()).unwrap_or("");
+        let keyword = format!("{} {}", song.name, artist);
+
+        // Step 1: locate the lyric record.
+        let search_url = "http://lyrics.kugou.com/search";
+        let resp = self
+            .client
+            .get(search_url)
+            .query(&[
+                ("ver", "1"),
+                ("man", "yes"),
+                ("client", "pc"),
+                ("keyword", keyword.as_str()),
+                ("hash", hash.as_str()),
+            ])
+            .send()
+            .await?;
+        let json: Value = resp.json().await?;
+        let candidate = json["candidates"]
+            .as_array()
+            .and_then(|arr| arr.first())
+            .ok_or(MusicError::NoLyrics)?;
+        let id = candidate["id"].as_str().ok_or(MusicError::NoLyrics)?;
+        let accesskey = candidate["accesskey"].as_str().ok_or(MusicError::NoLyrics)?;
+
+        // Step 2: download the LRC (base64-encoded in `content`).
+        let download_url = "http://lyrics.kugou.com/download";
+        let resp = self
+            .client
+            .get(download_url)
+            .query(&[
+                ("ver", "1"),
+                ("client", "pc"),
+                ("id", id),
+                ("accesskey", accesskey),
+                ("fmt", "lrc"),
+            ])
+            .send()
+            .await?;
+        let json: Value = resp.json().await?;
+        let content = json["content"].as_str().ok_or(MusicError::NoLyrics)?;
+        if content.is_empty() {
+            return Ok(None);
+        }
+        let lrc = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, content)
+            .map_err(|_| MusicError::InvalidResponse("kugou lyric base64 decode failed".into()))?;
+        Ok(Some(String::from_utf8_lossy(&lrc).into_owned()))
     }
 }
 

@@ -10,6 +10,13 @@ pub trait MusicProvider: Send + Sync {
 
     async fn get_play_url(&self, song: &Song, quality: Option<Quality>) -> Result<PlayUrlResult>;
 
+    /// Fetch LRC lyrics for a song, if the provider offers them. Returns
+    /// `Ok(None)` when no lyrics are available.
+    async fn get_lyrics(&self, song: &Song) -> Result<Option<String>> {
+        let _ = song;
+        Ok(None)
+    }
+
     fn enabled(&self) -> bool {
         true
     }

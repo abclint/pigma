@@ -20,8 +20,10 @@ pub struct SearchConfig {
     pub enable_flac: bool,
     pub timeout_ms: u64,
     pub max_results_per_provider: usize,
-    /// Proxy URL for the YouTube provider (empty = direct).
-    pub proxy: String,
+    /// Proxy URL for the domestic providers (kugou, kuwo, bilivideo). Empty = direct.
+    pub search_proxy: String,
+    /// Proxy URL for the YouTube provider. Empty = direct.
+    pub youtube_proxy: String,
 }
 
 impl Default for SearchConfig {
@@ -36,8 +38,9 @@ impl Default for SearchConfig {
             ],
             enable_flac: true,
             timeout_ms: 10000,
-            max_results_per_provider: 10,
-            proxy: String::new(),
+            max_results_per_provider: 20,
+            search_proxy: String::new(),
+            youtube_proxy: String::new(),
         }
     }
 }
@@ -67,8 +70,21 @@ impl SearchConfig {
         self
     }
 
+    /// Proxy URL for the domestic providers (kugou, kuwo, bilivideo).
+    pub fn with_search_proxy(mut self, proxy: impl Into<String>) -> Self {
+        self.search_proxy = proxy.into();
+        self
+    }
+
+    /// Proxy URL for the YouTube provider.
+    pub fn with_youtube_proxy(mut self, proxy: impl Into<String>) -> Self {
+        self.youtube_proxy = proxy.into();
+        self
+    }
+
+    /// Deprecated: alias for [`Self::with_youtube_proxy`].
     pub fn with_proxy(mut self, proxy: impl Into<String>) -> Self {
-        self.proxy = proxy.into();
+        self.youtube_proxy = proxy.into();
         self
     }
 }
@@ -84,10 +100,17 @@ impl MusicFinder {
 
         for source in &config.providers {
             let provider: Arc<dyn MusicProvider> = match source {
-                MusicSource::Kugou => Arc::new(KugouProvider::new(config.enable_flac)),
-                MusicSource::Kuwo => Arc::new(KuwoProvider::new(config.enable_flac)),
-                MusicSource::BiliVideo => Arc::new(BiliVideoProvider::new()),
-                MusicSource::Youtube => Arc::new(YoutubeProvider::with_proxy(&config.proxy)),
+                MusicSource::Kugou => Arc::new(KugouProvider::with_proxy(
+                    config.enable_flac,
+                    &config.search_proxy,
+                )),
+                MusicSource::Kuwo => Arc::new(KuwoProvider::with_proxy(&config.search_proxy)),
+                MusicSource::BiliVideo => {
+                    Arc::new(BiliVideoProvider::with_proxy(&config.search_proxy))
+                }
+                MusicSource::Youtube => {
+                    Arc::new(YoutubeProvider::with_proxy(&config.youtube_proxy))
+                }
             };
             if provider.enabled() {
                 providers.push(provider);
@@ -99,20 +122,25 @@ impl MusicFinder {
         Self { providers, config }
     }
 
+    /// The provider sources, ordered by priority (highest first).
+    pub fn sources(&self) -> Vec<MusicSource> {
+        self.providers.iter().map(|p| p.source()).collect()
+    }
+
     pub async fn search(&self, query: &SearchQuery) -> Result<SearchResult> {
         let (tx, mut rx) = mpsc::channel(self.providers.len());
-        let query = query.clone();
+        let query = std::sync::Arc::new(query.clone());
 
         for provider in &self.providers {
             let provider = provider.clone();
             let tx = tx.clone();
-            let query = query.clone();
+            let query = std::sync::Arc::clone(&query);
             let timeout = self.config.timeout_ms;
 
             tokio::spawn(async move {
                 let result = tokio::time::timeout(
                     std::time::Duration::from_millis(timeout),
-                    provider.search(&query),
+                    provider.search(query.as_ref()),
                 )
                 .await;
 
@@ -140,22 +168,31 @@ impl MusicFinder {
             return Err(crate::error::MusicError::NoResults);
         }
 
-        let combined = self.merge_results(all_results, &query);
+        let combined = self.merge_results(all_results, query.as_ref());
         Ok(combined)
     }
 
     fn merge_results(&self, results: Vec<SearchResult>, query: &SearchQuery) -> SearchResult {
         let mut all_songs = Vec::new();
-        for mut result in results {
-            for song in &mut result.songs {
+        for result in results {
+            for song in result.songs {
                 if all_songs.len() >= self.config.max_results_per_provider * self.providers.len() {
                     break;
                 }
-                all_songs.push(song.clone());
+                all_songs.push(song);
             }
         }
 
         let scored_songs = self.score_songs(all_songs, query);
+
+        // Tie-break equal scores by provider priority so the final ranking is
+        // deterministic instead of depending on mpsc arrival order.
+        let priority_of = |source: MusicSource| {
+            self.providers
+                .iter()
+                .position(|p| p.source() == source)
+                .unwrap_or(usize::MAX)
+        };
 
         let final_songs = match self.config.mode {
             SearchMode::FirstReturned => scored_songs,
@@ -175,6 +212,7 @@ impl MusicFinder {
                     score_b
                         .partial_cmp(&score_a)
                         .unwrap_or(std::cmp::Ordering::Equal)
+                        .then_with(|| priority_of(a.source).cmp(&priority_of(b.source)))
                 });
                 sorted
             }
@@ -215,17 +253,28 @@ impl MusicFinder {
             .collect::<Vec<_>>()
             .join(" ");
 
+        let mut name_hits = 0.0;
+        let mut artist_hits = 0.0;
+
         for token in query.keyword.to_lowercase().split_whitespace() {
-            if !token.is_empty() {
-                let token = crate::util::normalize_cjk(token);
-                if name.contains(&token) {
-                    score += 1.0;
-                }
-                if artist.contains(&token) {
-                    score += 1.0;
-                }
+            if token.is_empty() {
+                continue;
+            }
+            let token = crate::util::normalize_cjk(token);
+            if name.contains(&token) {
+                name_hits += 1.0;
+            }
+            if artist.contains(&token) {
+                artist_hits += 1.0;
             }
         }
+
+        // A token credited to the artist field is a much stronger signal than
+        // merely appearing in a cover/live/lyrics title. Weighting artist hits
+        // higher stops titles that embed the artist name from outscoring the
+        // real recording (e.g. "只有爱 (cover: 许巍)" vs "只有爱 - 许巍").
+        score += name_hits;
+        score += artist_hits * 1.5;
 
         if let Some(target_ms) = query.duration {
             let diff_ms = song.duration.abs_diff(target_ms);
@@ -271,6 +320,100 @@ impl MusicFinder {
         }
 
         Err(crate::error::MusicError::NoPlayUrl)
+    }
+
+    /// Resolve a play URL for a specific song directly via the provider that
+    /// produced it (no keyword re-search).
+    pub async fn get_play_url_for_song(
+        &self,
+        song: &crate::model::Song,
+        quality: Option<crate::model::Quality>,
+    ) -> Result<crate::model::PlayUrlResult> {
+        let provider = self
+            .providers
+            .iter()
+            .find(|p| p.source() == song.source)
+            .cloned()
+            .ok_or(crate::error::MusicError::NoPlayUrl)?;
+        let timeout = std::time::Duration::from_millis(self.config.timeout_ms);
+        match tokio::time::timeout(timeout, provider.get_play_url(song, quality)).await {
+            Ok(Ok(play_url)) => Ok(play_url),
+            Ok(Err(e)) => Err(e),
+            Err(_) => Err(crate::error::MusicError::Timeout),
+        }
+    }
+
+    /// Fetch LRC lyrics for a song via the provider that produced it.
+    pub async fn get_lyrics(&self, song: &crate::model::Song) -> Result<Option<String>> {
+        let provider = self.providers.iter().find(|p| p.source() == song.source);
+        match provider {
+            Some(p) => p.get_lyrics(song).await,
+            None => Ok(None),
+        }
+    }
+
+    /// Best-effort lyrics: the song's own provider first, then keyword-search
+    /// the configured sources (kugou preferred, then kuwo) for a matching song
+    /// and reuse its lyrics.
+    pub async fn get_lyrics_fallback(&self, song: &crate::model::Song) -> Option<String> {
+        if let Ok(Some(l)) = self.get_lyrics(song).await
+            && !l.trim().is_empty()
+        {
+            return Some(l);
+        }
+        for source in [MusicSource::Kugou, MusicSource::Kuwo] {
+            let candidate = self.search_first(&[source], song).await?;
+            if let Ok(Some(l)) = self.get_lyrics(&candidate).await
+                && !l.trim().is_empty()
+            {
+                return Some(l);
+            }
+        }
+        Some("未找到歌词".into())
+    }
+
+    /// Best-effort cover: the song's own cover first, else keyword-search the
+    /// configured sources (kuwo preferred, which provides album covers) and
+    /// reuse the match's cover.
+    pub async fn get_cover_fallback(&self, song: &crate::model::Song) -> Option<String> {
+        if !song.pic_url.is_empty() {
+            return Some(song.pic_url.clone());
+        }
+        for source in [
+            MusicSource::Kuwo,
+            MusicSource::Kugou,
+            MusicSource::BiliVideo,
+        ] {
+            let candidate = self.search_first(&[source], song).await?;
+            if !candidate.pic_url.is_empty() {
+                return Some(candidate.pic_url);
+            }
+        }
+        None
+    }
+
+    /// Search a set of providers for the first song matching `song` by keyword.
+    async fn search_first(
+        &self,
+        sources: &[MusicSource],
+        song: &crate::model::Song,
+    ) -> Option<Song> {
+        let artist = song.artists.first().map(|a| a.name.as_str()).unwrap_or("");
+        let query =
+            SearchQuery::new(format!("{} {}", song.name, artist)).with_duration(song.duration);
+        for source in sources {
+            let provider = self
+                .providers
+                .iter()
+                .find(|p| p.source() == *source)
+                .cloned()?;
+            if let Ok(result) = provider.search(&query).await
+                && let Some(first) = result.songs.into_iter().next()
+            {
+                return Some(first);
+            }
+        }
+        None
     }
 }
 

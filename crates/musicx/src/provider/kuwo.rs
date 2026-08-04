@@ -1,4 +1,3 @@
-use crate::crypto::{kuwo_build_query, kuwo_des_encrypt};
 use crate::error::{MusicError, Result};
 use crate::model::{
     Album, Artist, MusicSource, PlayUrlResult, Quality, SearchQuery, SearchResult, Song,
@@ -11,19 +10,26 @@ use serde_json::Value;
 #[derive(Debug)]
 pub struct KuwoProvider {
     client: Client,
-    enable_flac: bool,
 }
 
 impl KuwoProvider {
-    pub fn new(enable_flac: bool) -> Self {
-        let client = Client::builder()
-            .user_agent("okhttp/3.10.0")
-            .build()
-            .expect("Failed to create HTTP client");
-        Self {
-            client,
-            enable_flac,
+    pub fn new() -> Self {
+        Self::with_proxy("")
+    }
+
+    pub fn with_proxy(proxy_url: &str) -> Self {
+        let mut builder = Client::builder().user_agent("okhttp/3.10.0");
+        if !proxy_url.is_empty() {
+            builder = builder.proxy(reqwest::Proxy::all(proxy_url).expect("invalid proxy url"));
         }
+        let client = builder.build().expect("Failed to create HTTP client");
+        Self { client }
+    }
+}
+
+impl Default for KuwoProvider {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -60,6 +66,7 @@ impl MusicProvider for KuwoProvider {
 
         let songs: Vec<Song> = abslist
             .iter()
+            .filter(|item| item["tpay"].as_str() == Some("0"))
             .filter_map(|item| {
                 let music_rid = item["MUSICRID"].as_str()?;
                 let id = music_rid.split('_').next_back()?.to_string();
@@ -68,7 +75,17 @@ impl MusicProvider for KuwoProvider {
                 let artist_id = item["ARTISTID"].as_str().unwrap_or("").to_string();
                 let album_id = item["ALBUMID"].as_str().unwrap_or("").to_string();
                 let album_name = item["ALBUM"].as_str().unwrap_or("").to_string();
-                let duration = item["DURATION"].as_u64().unwrap_or(0) * 1000;
+                let duration = item["DURATION"]
+                    .as_str()
+                    .and_then(|s| s.parse().ok())
+                    .or_else(|| item["DURATION"].as_u64())
+                    .unwrap_or(0)
+                    * 1000;
+                let pic_url = item["web_albumpic_short"]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .map(|s| format!("http://img3.kuwo.cn/star/albumcover/{s}"))
+                    .unwrap_or_default();
 
                 Some(Song {
                     id,
@@ -89,6 +106,7 @@ impl MusicProvider for KuwoProvider {
                     source: MusicSource::Kuwo,
                     quality: None,
                     url: None,
+                    pic_url,
                     raw_data: item.clone(),
                 })
             })
@@ -103,27 +121,28 @@ impl MusicProvider for KuwoProvider {
     }
 
     async fn get_play_url(&self, song: &Song, _quality: Option<Quality>) -> Result<PlayUrlResult> {
-        let rid = &song.id;
-        let format = if self.enable_flac { "flac|mp3" } else { "mp3" };
-
-        let query = kuwo_build_query(rid, format);
-        let encrypted = kuwo_des_encrypt(&query)?;
-
-        let url = "http://mobi.kuwo.cn/mobi.s";
-        let resp = self
-            .client
-            .get(url)
-            .query(&[("f", "kuwo"), ("q", encrypted.as_str())])
-            .send()
-            .await?;
-
+        // The legacy mobi.kuwo.cn/mobi.s endpoint (kwDES + `jiakong_vh` package)
+        // now returns a fixed placeholder audio for every request, so use the
+        // anti.s endpoint instead, which serves real MP3 URLs for free songs.
+        // It only supports mp3 (no flac).
+        let url = format!(
+            "http://antiserver.kuwo.cn/anti.s?type=convert_url&format=mp3&response=url&rid=MUSIC_{}",
+            song.id
+        );
+        let resp = self.client.get(&url).send().await?;
         let body = resp.text().await?;
-        let parsed = parse_mobi_response(&body)
-            .ok_or_else(|| MusicError::InvalidResponse("Missing url in mobi.s response".into()))?;
+        let url = body.trim().to_string();
+
+        if url.is_empty() || !url.starts_with("http") {
+            return Err(MusicError::NoPlayUrl);
+        }
+        if is_placeholder_url(&url) {
+            return Err(MusicError::NoPlayUrl);
+        }
 
         Ok(PlayUrlResult {
-            url: parsed.url,
-            quality: parsed.quality,
+            url,
+            quality: Quality::Standard,
             size: None,
             bitrate: None,
         })
@@ -132,83 +151,59 @@ impl MusicProvider for KuwoProvider {
     fn priority(&self) -> u8 {
         20
     }
+
+    async fn get_lyrics(&self, song: &Song) -> Result<Option<String>> {
+        let url = format!(
+            "http://player.kuwo.cn/webmusic/st/getNewMuiseByRid?rid=MUSIC_{}&type=musicname",
+            song.id
+        );
+        let resp = self.client.get(&url).send().await?;
+        let body = resp.text().await?;
+
+        let lyric = extract_kuwo_lyric(&body).map(|l| l.trim().to_string());
+        Ok(lyric.filter(|l| !l.is_empty()))
+    }
 }
 
-struct MobiResponse {
-    url: String,
-    quality: Quality,
+/// Pull the `<lyric>` element out of the kuwo lyrics XML response (it may be
+/// wrapped in CDATA).
+fn extract_kuwo_lyric(xml: &str) -> Option<String> {
+    let start = xml.find("<lyric>")?;
+    let inner = &xml[start + "<lyric>".len()..];
+    let end = inner.find("</lyric>")?;
+    let raw = &inner[..end];
+    let text = raw
+        .strip_prefix("<![CDATA[")
+        .and_then(|rest| rest.strip_suffix("]]>"))
+        .unwrap_or(raw);
+    (!text.trim().is_empty()).then(|| text.to_string())
 }
 
-/// Parse the text/plain `key=value` response returned by `mobi.kuwo.cn/mobi.s`.
-///
-/// Example body:
-/// ```text
-/// format=mp3
-/// bitrate=6
-/// url=http://kw-bj.kuwo.cn/...mp3?bitrate$6&format$mp3&source$...
-/// sig=...
-/// ```
-fn parse_mobi_response(body: &str) -> Option<MobiResponse> {
-    let mut url = None;
-    let mut format = String::new();
-    let mut bitrate = 0u32;
-
-    for line in body.lines() {
-        if let Some((key, value)) = line.split_once('=') {
-            match key.trim() {
-                "url" => url = Some(value.trim().to_string()),
-                "format" => format = value.trim().to_string(),
-                "bitrate" => bitrate = value.trim().parse().unwrap_or(0),
-                _ => {}
-            }
-        }
-    }
-
-    let url = url?;
-    if url.is_empty() {
-        return None;
-    }
-
-    let quality = if format.contains("flac") || url.contains(".flac") {
-        Quality::Lossless
-    } else if bitrate >= 8 {
-        Quality::High
-    } else {
-        Quality::Standard
-    };
-
-    Some(MobiResponse { url, quality })
+/// Kuwo serves a short "this resource cannot be played" jingle (a fixed file)
+/// instead of a real song when it is unavailable (VIP / copyright). Reject such
+/// URLs so the caller can fall back to the next source.
+fn is_placeholder_url(url: &str) -> bool {
+    url.contains("/1325645003.mp3") || url.contains("/588957081.mp3")
 }
 
 #[cfg(test)]
 mod tests {
-    use super::parse_mobi_response;
-    use crate::model::Quality;
+    use super::is_placeholder_url;
 
     #[test]
-    fn parses_mp3_response() {
-        let body = "format=mp3\nbitrate=6\nurl=http://kw-bj.kuwo.cn/a.mp3?bitrate$6\nsig=1\nrid=2\ntype=1\n";
-        let parsed = parse_mobi_response(body).expect("should parse");
-        assert_eq!(parsed.url, "http://kw-bj.kuwo.cn/a.mp3?bitrate$6");
-        assert_eq!(parsed.quality, Quality::Standard);
+    fn detects_placeholder_urls() {
+        assert!(is_placeholder_url(
+            "http://kw-bj.kuwo.cn/abc/lx/resource/n3/49/43/1325645003.mp3?bitrate$6"
+        ));
+        assert!(is_placeholder_url(
+            "http://nf.sycdn.kuwo.cn/abc/resource/n1/69/32/588957081.mp3"
+        ));
     }
 
     #[test]
-    fn parses_high_quality_response() {
-        let body = "format=mp3\nbitrate=8\nurl=http://kw-bj.kuwo.cn/a.mp3\n";
-        let parsed = parse_mobi_response(body).expect("should parse");
-        assert_eq!(parsed.quality, Quality::High);
-    }
-
-    #[test]
-    fn parses_flac_response() {
-        let body = "format=flac\nbitrate=1\nurl=http://kw-bj.kuwo.cn/a.flac\n";
-        let parsed = parse_mobi_response(body).expect("should parse");
-        assert_eq!(parsed.quality, Quality::Lossless);
-    }
-
-    #[test]
-    fn rejects_response_without_url() {
-        assert!(parse_mobi_response("format=mp3\nbitrate=6\n").is_none());
+    fn accepts_real_urls() {
+        assert!(!is_placeholder_url(
+            "http://lw.sycdn.kuwo.cn/abc/resource/30106/trackmedia/M500001UJiey3Uv8zq.mp3"
+        ));
     }
 }

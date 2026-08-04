@@ -27,10 +27,16 @@ pub struct BiliVideoProvider {
 
 impl BiliVideoProvider {
     pub fn new() -> Self {
-        let client = Client::builder()
-            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-            .build()
-            .expect("Failed to create HTTP client");
+        Self::with_proxy("")
+    }
+
+    pub fn with_proxy(proxy_url: &str) -> Self {
+        let mut builder = Client::builder()
+            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+        if !proxy_url.is_empty() {
+            builder = builder.proxy(reqwest::Proxy::all(proxy_url).expect("invalid proxy url"));
+        }
+        let client = builder.build().expect("Failed to create HTTP client");
         Self {
             client,
             cookies: Arc::new(Mutex::new(String::new())),
@@ -108,6 +114,10 @@ impl MusicProvider for BiliVideoProvider {
                 vec![
                     ("search_type".to_string(), "video".to_string()),
                     ("keyword".to_string(), query.keyword.clone()),
+                    (
+                        "page_size".to_string(),
+                        query.page_size.unwrap_or(20).to_string(),
+                    ),
                 ],
             )
             .await?;
@@ -123,6 +133,22 @@ impl MusicProvider for BiliVideoProvider {
                 let title = clean_title(item["title"].as_str().unwrap_or(""));
                 let typeid = item["typeid"].as_u64().unwrap_or(0).to_string();
                 let typename = item["typename"].as_str().unwrap_or("").to_string();
+                let duration = item["duration"]
+                    .as_str()
+                    .and_then(crate::util::parse_duration_str)
+                    .unwrap_or(0)
+                    * 1000;
+                let pic_url = item["pic"]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .map(|s| {
+                        if s.starts_with("//") {
+                            format!("https:{s}")
+                        } else {
+                            s.to_string()
+                        }
+                    })
+                    .unwrap_or_default();
 
                 Some(Song {
                     id: bvid,
@@ -132,10 +158,11 @@ impl MusicProvider for BiliVideoProvider {
                         name: typename,
                     }],
                     album: None,
-                    duration: 0,
+                    duration,
                     source: MusicSource::BiliVideo,
                     quality: None,
                     url: None,
+                    pic_url,
                     raw_data: item.clone(),
                 })
             })

@@ -43,7 +43,7 @@ impl MusicProvider for YoutubeProvider {
     async fn search(&self, query: &SearchQuery) -> Result<SearchResult> {
         let results = self
             .client
-            .search(&query.keyword, 10, None)
+            .search(&query.keyword, query.page_size.unwrap_or(20) as usize, None)
             .await
             .map_err(|e| MusicError::Provider {
                 provider: "youtube".into(),
@@ -64,6 +64,7 @@ impl MusicProvider for YoutubeProvider {
                 source: MusicSource::Youtube,
                 quality: None,
                 url: None,
+                pic_url: String::new(),
                 raw_data: serde_json::json!({
                     "views": r.views,
                     "duration_str": r.duration,
