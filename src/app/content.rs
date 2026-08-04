@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use super::{App, send_event};
 use crate::event::{NavigationEvent, PlaybackEvent};
-use crate::playback::types::parse_lyric_lines;
+use crate::playback::parse_lyric_lines;
 use crate::state::{ContentState, PaginationInfo};
 use image::GenericImageView;
 
@@ -53,29 +53,30 @@ impl App {
         let same_api =
             self.state.navigation.pagination.as_ref().map(|p| &p.api) == Some(&pagination.api);
 
+        let mut content = content;
+
         if same_api
-            && let (ContentState::Songs(new_songs), ContentState::Songs(existing)) = (
-                &content,
-                std::sync::Arc::make_mut(&mut self.state.navigation.content),
-            )
+            && let ContentState::Songs(new_songs) = &mut content
+            && let ContentState::Songs(existing) =
+                std::sync::Arc::make_mut(&mut self.state.navigation.content)
         {
-            existing.extend(new_songs.iter().cloned());
-            self.state.navigation.pagination = Some(pagination.clone());
+            existing.extend(std::mem::take(new_songs));
+            let api_str = pagination.api.clone();
+            self.state.navigation.pagination = Some(pagination);
             *self.state.navigation.content_rows_cache.borrow_mut() = None;
 
             let ttl = self.config.cache.content_cache_ttl;
-            if ttl > 0 && !pagination.api.is_empty() {
+            if ttl > 0 && !api_str.is_empty() {
                 let cache = self.service.cache().clone();
-                let api_str = pagination.api.clone();
                 let content_arc = Arc::clone(&self.state.navigation.content);
                 tokio::task::spawn_blocking(move || {
                     cache.save_content_cache(&api_str, &content_arc);
                 });
             }
-        } else {
-            self.state.navigation.set_content(content);
-            self.state.navigation.pagination = Some(pagination);
+            return;
         }
+        self.state.navigation.set_content(content);
+        self.state.navigation.pagination = Some(pagination);
     }
 
     pub(super) fn handle_playlist_select(&mut self, id: u64, name: Option<String>) {
@@ -133,7 +134,13 @@ impl App {
         };
         if let Some((pos, name)) = name {
             if let ContentState::Songs(songs) = self.state.navigation.content.as_ref() {
-                self.playback.append_and_play(songs, pos);
+                if self.state.navigation.content_is_search {
+                    // 搜索列表只追加回车播放的这首，不清空已有队列
+                    self.playback
+                        .append_and_play(std::slice::from_ref(&songs[pos]), 0);
+                } else {
+                    self.playback.append_and_play(songs, pos);
+                }
             }
             self.toast(format!("▶  {}", name));
         }
@@ -150,77 +157,153 @@ impl App {
             }
             self.toast(format!("▶  {}", song.name));
             let song_id = song.id;
-            let service = self.service.clone();
-            let sender = self.state.events.sender();
 
-            tokio::spawn(async move {
-                if let Some(lyrics) = service.load_lyrics(song_id).await {
-                    let lyric_lines = parse_lyric_lines(&lyrics.lyric);
-                    let tlyric_lines = parse_lyric_lines(&lyrics.tlyric);
+            if crate::utils::musicx::is_musicx_song_id(song_id) {
+                let finder = self.finder.clone();
+                let registry = self.musicx_songs.clone();
+                let sender = self.state.events.sender();
+                tokio::spawn(async move {
+                    let msong = registry.lock().ok().and_then(|m| m.get(&song_id).cloned());
+                    let Some(msong) = msong else {
+                        return;
+                    };
+                    let lrc = match finder.get_lyrics_fallback(&msong).await {
+                        Some(l) => l,
+                        None => return,
+                    };
+                    let lines: Vec<String> = lrc.lines().map(|s| s.to_string()).collect();
+                    let lyric_lines = parse_lyric_lines(&lines);
+                    if lyric_lines.is_empty() {
+                        return;
+                    }
                     send_event(
                         &sender,
                         PlaybackEvent::LyricsLoaded {
                             song_id,
                             lyrics: lyric_lines,
-                            translated_lyrics: tlyric_lines,
+                            translated_lyrics: Vec::new(),
                         }
                         .into(),
                     );
-                }
-            });
+                });
+            } else {
+                let service = self.service.clone();
+                let sender = self.state.events.sender();
+                tokio::spawn(async move {
+                    if let Some(lyrics) = service.load_lyrics(song_id).await {
+                        let lyric_lines = parse_lyric_lines(&lyrics.lyric);
+                        let tlyric_lines = parse_lyric_lines(&lyrics.tlyric);
+                        send_event(
+                            &sender,
+                            PlaybackEvent::LyricsLoaded {
+                                song_id,
+                                lyrics: lyric_lines,
+                                translated_lyrics: tlyric_lines,
+                            }
+                            .into(),
+                        );
+                    }
+                });
+            }
+
+            // Clear the cover so a new song never shows the previous one's
+            // cover while its own cover is loading (or missing).
+            if let Ok(mut guard) = self.playback.state.cover.protocol.lock() {
+                *guard = None;
+            }
 
             // Load cover image
-            if !song.pic_url.is_empty() {
-                let song_id = song.id;
-                let pic_url = song.pic_url.clone();
-                let cover = self.playback.state.cover.0.clone();
-                let picker = self.picker.clone();
-                let cache = self.service.cache().clone();
-                tokio::task::spawn_blocking(move || {
-                    let data: Vec<u8> = if let Some(cached) = cache.load_cover(song_id) {
-                        cached
+            let song_id = song.id;
+            let is_musicx = crate::utils::musicx::is_musicx_song_id(song_id);
+            let own_pic = song.pic_url.clone();
+            let cover = self.playback.state.cover.clone();
+            let picker = self.picker.clone();
+            let cache = self.service.cache().clone();
+            let cover_http = self.cover_http.clone();
+
+            if !own_pic.is_empty() || is_musicx {
+                let finder = self.finder.clone();
+                let registry = self.musicx_songs.clone();
+                tokio::spawn(async move {
+                    // Mark whose cover we are loading; a stale loader for a
+                    // previously played song will be dropped below.
+                    if let Ok(mut g) = cover.song_id.lock() {
+                        *g = Some(song_id);
+                    }
+                    // Resolve a cover URL: own cover, else fallback search
+                    // (kuwo preferred) for musicx songs without one.
+                    let cover_url = if !own_pic.is_empty() {
+                        Some(own_pic)
                     } else {
-                        let small_url = if pic_url.contains('?') {
-                            format!("{}&param=200y200", pic_url)
-                        } else {
-                            format!("{}?param=200y200", pic_url)
-                        };
-
-                        let Ok(resp) = reqwest::blocking::get(&small_url) else {
-                            return;
-                        };
-                        let Ok(bytes) = resp.bytes() else {
-                            return;
-                        };
-                        let raw = bytes.to_vec();
-                        cache.save_cover(song_id, &raw);
-                        raw
+                        let msong = registry.lock().ok().and_then(|m| m.get(&song_id).cloned());
+                        match msong {
+                            Some(msong) => finder.get_cover_fallback(&msong).await,
+                            None => None,
+                        }
                     };
-
-                    let Ok(img) = image::load_from_memory(&data) else {
+                    let Some(cover_url) = cover_url else {
                         return;
                     };
 
-                    // Apply circular mask
-                    let (w, h) = img.dimensions();
-                    let size = w.min(h);
-                    let x = (w - size) / 2;
-                    let y = (h - size) / 2;
-                    let mut square = img.crop_imm(x, y, size, size).to_rgba8();
-                    drop(img);
+                    let small_url = if cover_url.contains('?') {
+                        format!("{}&param=200y200", cover_url)
+                    } else {
+                        format!("{}?param=200y200", cover_url)
+                    };
 
-                    let r = size as f32 / 2.0;
-                    for (px, py, pixel) in square.enumerate_pixels_mut() {
-                        let dx = px as f32 + 0.5 - r;
-                        let dy = py as f32 + 0.5 - r;
-                        if dx * dx + dy * dy > r * r {
-                            *pixel = image::Rgba([0u8, 0, 0, 0]);
+                    let Some(protocol) = tokio::task::spawn_blocking(move || {
+                        let data: Vec<u8> = if let Some(cached) = cache.load_cover(song_id) {
+                            cached
+                        } else {
+                            let Ok(resp) = cover_http.get(&small_url).send() else {
+                                return None;
+                            };
+                            let Ok(bytes) = resp.bytes() else {
+                                return None;
+                            };
+                            let raw = bytes.to_vec();
+                            cache.save_cover(song_id, &raw);
+                            raw
+                        };
+
+                        let Ok(img) = image::load_from_memory(&data) else {
+                            return None;
+                        };
+
+                        // Apply circular mask
+                        let (w, h) = img.dimensions();
+                        let size = w.min(h);
+                        let x = (w - size) / 2;
+                        let y = (h - size) / 2;
+                        let mut square = img.crop_imm(x, y, size, size).to_rgba8();
+                        drop(img);
+
+                        let r = size as f32 / 2.0;
+                        for (px, py, pixel) in square.enumerate_pixels_mut() {
+                            let dx = px as f32 + 0.5 - r;
+                            let dy = py as f32 + 0.5 - r;
+                            if dx * dx + dy * dy > r * r {
+                                *pixel = image::Rgba([0u8, 0, 0, 0]);
+                            }
                         }
-                    }
 
-                    let dyn_img = image::DynamicImage::ImageRgba8(square);
-                    let protocol = picker.new_resize_protocol(dyn_img);
-                    if let Ok(mut guard) = cover.lock() {
+                        let dyn_img = image::DynamicImage::ImageRgba8(square);
+                        Some(picker.new_resize_protocol(dyn_img))
+                    })
+                    .await
+                    .ok()
+                    .flatten() else {
+                        return;
+                    };
+
+                    // Only apply the cover if the song is still the current one
+                    // (a stale loader must not overwrite a newer cover).
+                    let still_current = cover
+                        .song_id
+                        .lock()
+                        .map(|g| *g == Some(song_id))
+                        .unwrap_or(false);
+                    if still_current && let Ok(mut guard) = cover.protocol.lock() {
                         *guard = Some(protocol);
                     }
                 });
