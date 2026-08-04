@@ -6,7 +6,7 @@ use futures::{FutureExt, StreamExt};
 use ncm_api::{LoginInfo, SongInfo};
 use tokio::sync::mpsc;
 
-use crate::playback::types::LyricLine;
+use crate::playback::LyricLine;
 use crate::state::{CommandAction, ContentState, Page, PaginationInfo, SplashLogEntry};
 
 #[derive(Clone, Debug)]
@@ -65,6 +65,8 @@ pub enum PlaybackEvent {
     SetPlaylistId(u64),
     LikeSong(u64),
     DislikeSong(u64),
+    /// stream-download finished caching the given song into the cache file.
+    Cached(u64),
 }
 
 #[derive(Clone, Debug)]

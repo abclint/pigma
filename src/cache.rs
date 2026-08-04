@@ -3,7 +3,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ncm_api::SongInfo;
@@ -108,6 +108,43 @@ impl<'de> Deserialize<'de> for CacheEntry {
 
 type CacheIndex = HashMap<u64, CacheEntry>;
 
+/// On-disk layout of `cache_index.json`: audio entries plus the musicx song
+/// registry (original search results keyed by synthetic id) so lyric/cover
+/// fallback survives restarts. Accepts the legacy bare `{id: entry}` map too.
+#[derive(Serialize, Default)]
+struct CacheIndexFile {
+    #[serde(default)]
+    songs: HashMap<u64, CacheEntry>,
+    #[serde(default)]
+    musicx: HashMap<u64, musicx::Song>,
+}
+
+impl<'de> Deserialize<'de> for CacheIndexFile {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Raw {
+            Legacy(HashMap<u64, CacheEntry>),
+            New {
+                #[serde(default)]
+                songs: HashMap<u64, CacheEntry>,
+                #[serde(default)]
+                musicx: HashMap<u64, musicx::Song>,
+            },
+        }
+        Ok(match Raw::deserialize(deserializer)? {
+            Raw::Legacy(songs) => Self {
+                songs,
+                musicx: HashMap::new(),
+            },
+            Raw::New { songs, musicx } => Self { songs, musicx },
+        })
+    }
+}
+
 /// Default maximum cache size in bytes (2 GB).
 const DEFAULT_MAX_CACHE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
@@ -122,6 +159,7 @@ pub struct CacheManager {
     index: Arc<RwLock<CacheIndex>>,
     max_cache_bytes: u64,
     cached_total_bytes: Arc<AtomicU64>,
+    musicx_songs: Arc<Mutex<HashMap<u64, musicx::Song>>>,
 }
 
 impl CacheManager {
@@ -129,17 +167,18 @@ impl CacheManager {
         let lyrics_dir = base_dir.join("lyrics");
         let content_dir = base_dir.join("content");
         let covers_dir = base_dir.join("covers");
-        let index = Self::load_index_static(&downloads_dir);
-        let total = Self::compute_total_bytes(&downloads_dir, &index);
+        let index_file = Self::load_index_static(&downloads_dir);
+        let total = Self::compute_total_bytes(&downloads_dir, &index_file.songs);
         Self {
             downloads_dir,
             lyrics_dir,
             content_dir,
             covers_dir,
             template,
-            index: Arc::new(RwLock::new(index)),
+            index: Arc::new(RwLock::new(index_file.songs)),
             max_cache_bytes: DEFAULT_MAX_CACHE_BYTES,
             cached_total_bytes: Arc::new(AtomicU64::new(total)),
+            musicx_songs: Arc::new(Mutex::new(index_file.musicx)),
         }
     }
 
@@ -157,10 +196,10 @@ impl CacheManager {
         dir.join("cache_index.json")
     }
 
-    fn load_index_static(dir: &Path) -> CacheIndex {
+    fn load_index_static(dir: &Path) -> CacheIndexFile {
         let path = Self::index_path(dir);
         if !path.exists() {
-            return HashMap::new();
+            return CacheIndexFile::default();
         }
         fs::read_to_string(&path)
             .ok()
@@ -173,12 +212,34 @@ impl CacheManager {
     fn save_index(&self) {
         let snapshot = {
             let index = self.index.read().unwrap_or_else(|e| e.into_inner());
-            serde_json::to_string(&*index).unwrap_or_default()
+            let musicx = self.musicx_songs.lock().unwrap_or_else(|e| e.into_inner());
+            let file = CacheIndexFile {
+                songs: index.clone(),
+                musicx: musicx.clone(),
+            };
+            serde_json::to_string(&file).unwrap_or_default()
         };
         let path = Self::index_path(&self.downloads_dir);
         if let Err(e) = fs::write(&path, snapshot) {
             log::warn!("Failed to write cache index: {e}");
         }
+    }
+
+    /// Replace the persisted musicx registry (search-result songs) with the
+    /// given snapshot. Callers should follow up with [`Self::flush_index`] to
+    /// write it to `cache_index.json`.
+    pub fn set_musicx_songs(&self, songs: &HashMap<u64, musicx::Song>) {
+        if let Ok(mut m) = self.musicx_songs.lock() {
+            *m = songs.clone();
+        }
+    }
+
+    /// Snapshot of the persisted musicx registry.
+    pub fn musicx_songs_snapshot(&self) -> HashMap<u64, musicx::Song> {
+        self.musicx_songs
+            .lock()
+            .map(|m| m.clone())
+            .unwrap_or_default()
     }
 
     pub fn mark_uploaded(&self, song_id: u64) {

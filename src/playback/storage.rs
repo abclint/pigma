@@ -5,7 +5,7 @@ use std::sync::Arc;
 use ncm_api::SongInfo;
 use serde::{Deserialize, Serialize};
 
-use super::types::PlayMode;
+use super::PlayMode;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SavedQueue {
@@ -18,14 +18,32 @@ pub struct SavedQueue {
     pub progress: f64,
 }
 
-#[derive(Serialize)]
 struct SavedQueueRef<'a> {
-    queue: &'a [SongInfo],
-    history: &'a [SongInfo],
+    queue: &'a [Arc<SongInfo>],
+    history: &'a [Arc<SongInfo>],
     current_index: Option<usize>,
     mode: &'a PlayMode,
     volume: f64,
     progress: f64,
+}
+
+impl Serialize for SavedQueueRef<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut s = serializer.serialize_struct("SavedQueueRef", 6)?;
+        let queue: Vec<&SongInfo> = self.queue.iter().map(|s| s.as_ref()).collect();
+        let history: Vec<&SongInfo> = self.history.iter().map(|s| s.as_ref()).collect();
+        s.serialize_field("queue", &queue)?;
+        s.serialize_field("history", &history)?;
+        s.serialize_field("current_index", &self.current_index)?;
+        s.serialize_field("mode", self.mode)?;
+        s.serialize_field("volume", &self.volume)?;
+        s.serialize_field("progress", &self.progress)?;
+        s.end()
+    }
 }
 
 pub struct PlaylistStorage {
@@ -69,11 +87,9 @@ impl PlaylistStorage {
         volume: f64,
         progress: f64,
     ) {
-        let owned_queue: Vec<SongInfo> = queue.iter().map(|s| (**s).clone()).collect();
-        let owned_history: Vec<SongInfo> = history.iter().map(|s| (**s).clone()).collect();
         let saved = SavedQueueRef {
-            queue: &owned_queue,
-            history: &owned_history,
+            queue,
+            history,
             current_index,
             mode,
             volume,
@@ -98,8 +114,8 @@ impl PlaylistStorage {
 
     pub fn save_playlist(&self, name: &str, songs: &[Arc<SongInfo>]) -> bool {
         let path = self.base_dir.join(format!("{}.json", name));
-        let owned: Vec<SongInfo> = songs.iter().map(|s| (**s).clone()).collect();
-        if let Ok(json) = serde_json::to_string(&owned) {
+        let refs: Vec<&SongInfo> = songs.iter().map(|s| s.as_ref()).collect();
+        if let Ok(json) = serde_json::to_string(&refs) {
             tokio::task::spawn_blocking(move || fs::write(path, json).is_ok());
             true
         } else {

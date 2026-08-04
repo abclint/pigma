@@ -191,6 +191,17 @@ impl App {
                     }
                 });
             }
+            PlaybackEvent::Cached(song_id) => {
+                if self
+                    .playback
+                    .state
+                    .current_song
+                    .as_ref()
+                    .is_some_and(|s| s.id == song_id)
+                {
+                    self.playback.state.cached = true;
+                }
+            }
         }
     }
 
