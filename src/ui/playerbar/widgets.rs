@@ -9,7 +9,7 @@ use ratatui_image::{Resize, StatefulImage};
 
 use crate::config::PlayerbarConfig;
 use crate::config::Theme;
-use crate::playback::types::PlayMode;
+use crate::playback::PlayMode;
 use crate::state::PlaybackState;
 use crate::ui::gradient_line_gauge::GradientLineGauge;
 use crate::ui::spinner::Spinner;
@@ -20,7 +20,7 @@ pub fn mode_icon(mode: &PlayMode) -> (&str, &str) {
     match mode {
         PlayMode::Sequential => ("\u{F049E}", "顺序"),
         PlayMode::RepeatOne => ("\u{F0458}", "单曲"),
-        PlayMode::RepeatAll => ("\u{F0577}", "列表"),
+        PlayMode::RepeatAll => ("\u{f0456}", "列表"),
         PlayMode::Shuffle => ("\u{F049F}", "随机"),
         PlayMode::Heartbeat { .. } => ("\u{F0430}", "心动"),
     }
@@ -254,7 +254,7 @@ pub fn draw_volume(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: 
 pub fn draw_cover(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
     if player.current_song.is_some() {
         // Try to render real cover image if available
-        if let Ok(mut borrow) = player.cover.0.lock()
+        if let Ok(mut borrow) = player.cover.protocol.lock()
             && let Some(protocol) = borrow.as_mut()
         {
             let image = StatefulImage::new().resize(Resize::Fit(None));
