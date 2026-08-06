@@ -1,8 +1,8 @@
-use crate::error::{MusicError, Result};
+use crate::error::{SonarError, Result};
 use crate::model::{
-    Album, Artist, MusicSource, PlayUrlResult, Quality, SearchQuery, SearchResult, Song,
+    SonarSource, PlayUrlResult, Quality, SearchQuery, SearchResult, Song, SongMeta, make_song_id,
 };
-use crate::provider::MusicProvider;
+use crate::provider::SonarProvider;
 use async_trait::async_trait;
 use reqwest::Client;
 use serde_json::Value;
@@ -34,9 +34,9 @@ impl Default for KuwoProvider {
 }
 
 #[async_trait]
-impl MusicProvider for KuwoProvider {
-    fn source(&self) -> MusicSource {
-        MusicSource::Kuwo
+impl SonarProvider for KuwoProvider {
+    fn source(&self) -> SonarSource {
+        SonarSource::Kuwo
     }
 
     async fn search(&self, query: &SearchQuery) -> Result<SearchResult> {
@@ -62,7 +62,7 @@ impl MusicProvider for KuwoProvider {
 
         let abslist = json["content"][1]["musicpage"]["abslist"]
             .as_array()
-            .ok_or(MusicError::InvalidResponse("Missing abslist".into()))?;
+            .ok_or(SonarError::InvalidResponse("Missing abslist".into()))?;
 
         let songs: Vec<Song> = abslist
             .iter()
@@ -72,8 +72,6 @@ impl MusicProvider for KuwoProvider {
                 let id = music_rid.split('_').next_back()?.to_string();
                 let name = item["SONGNAME"].as_str()?.to_string();
                 let artist_name = item["ARTIST"].as_str().unwrap_or("").to_string();
-                let artist_id = item["ARTISTID"].as_str().unwrap_or("").to_string();
-                let album_id = item["ALBUMID"].as_str().unwrap_or("").to_string();
                 let album_name = item["ALBUM"].as_str().unwrap_or("").to_string();
                 let duration = item["DURATION"]
                     .as_str()
@@ -88,26 +86,15 @@ impl MusicProvider for KuwoProvider {
                     .unwrap_or_default();
 
                 Some(Song {
-                    id,
+                    id: make_song_id(SonarSource::Kuwo, &id),
+                    source_id: id,
                     name,
-                    artists: vec![Artist {
-                        id: artist_id,
-                        name: artist_name,
-                    }],
-                    album: if album_id.is_empty() {
-                        None
-                    } else {
-                        Some(Album {
-                            id: album_id,
-                            name: album_name,
-                        })
-                    },
+                    singer: artist_name,
+                    album: album_name,
                     duration,
-                    source: MusicSource::Kuwo,
-                    quality: None,
-                    url: None,
+                    source: SonarSource::Kuwo,
                     pic_url,
-                    raw_data: item.clone(),
+                    meta: SongMeta::default(),
                 })
             })
             .collect();
@@ -115,7 +102,7 @@ impl MusicProvider for KuwoProvider {
         Ok(SearchResult {
             total: None,
             songs,
-            source: MusicSource::Kuwo,
+            source: SonarSource::Kuwo,
             query: query.clone(),
         })
     }
@@ -127,17 +114,17 @@ impl MusicProvider for KuwoProvider {
         // It only supports mp3 (no flac).
         let url = format!(
             "http://antiserver.kuwo.cn/anti.s?type=convert_url&format=mp3&response=url&rid=MUSIC_{}",
-            song.id
+            song.source_id
         );
         let resp = self.client.get(&url).send().await?;
         let body = resp.text().await?;
         let url = body.trim().to_string();
 
         if url.is_empty() || !url.starts_with("http") {
-            return Err(MusicError::NoPlayUrl);
+            return Err(SonarError::NoPlayUrl);
         }
         if is_placeholder_url(&url) {
-            return Err(MusicError::NoPlayUrl);
+            return Err(SonarError::NoPlayUrl);
         }
 
         Ok(PlayUrlResult {
@@ -155,7 +142,7 @@ impl MusicProvider for KuwoProvider {
     async fn get_lyrics(&self, song: &Song) -> Result<Option<String>> {
         let url = format!(
             "http://player.kuwo.cn/webmusic/st/getNewMuiseByRid?rid=MUSIC_{}&type=musicname",
-            song.id
+            song.source_id
         );
         let resp = self.client.get(&url).send().await?;
         let body = resp.text().await?;

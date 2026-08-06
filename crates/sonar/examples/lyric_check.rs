@@ -1,11 +1,11 @@
-use musicx::{MusicFinder, MusicSource, SearchConfig, SearchQuery};
+use sonar::{SonarFinder, SonarSource, SearchConfig, SearchQuery};
 
 #[tokio::main]
 fn main() {
     let _ = rustls::crypto::ring::default_provider().install_default();
-    let finder = MusicFinder::new(
+    let finder = SonarFinder::new(
         SearchConfig::new()
-            .with_providers(vec![MusicSource::Kuwo])
+            .with_providers(vec![SonarSource::Kuwo])
             .with_timeout(15000),
     );
     let result = finder
@@ -18,7 +18,7 @@ fn main() {
             "#{i} [{:?}] {} - {} pic={} lyrics={}",
             song.source,
             song.name,
-            song.artists[0].name,
+            song.singer,
             !song.pic_url.is_empty(),
             lrc.as_ref().map(|l| l.lines().count()).unwrap_or(0)
         );

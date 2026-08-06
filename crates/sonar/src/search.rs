@@ -1,7 +1,7 @@
 use crate::error::Result;
-use crate::model::{MusicSource, SearchQuery, SearchResult, Song};
+use crate::model::{SearchQuery, SearchResult, SonarSource, Song};
 use crate::provider::{
-    MusicProvider, bilivideo::BiliVideoProvider, kugou::KugouProvider, kuwo::KuwoProvider,
+    SonarProvider, bilivideo::BiliVideoProvider, kugou::KugouProvider, kuwo::KuwoProvider,
     youtube::YoutubeProvider,
 };
 use std::sync::Arc;
@@ -16,7 +16,7 @@ pub enum SearchMode {
 #[derive(Debug, Clone)]
 pub struct SearchConfig {
     pub mode: SearchMode,
-    pub providers: Vec<MusicSource>,
+    pub providers: Vec<SonarSource>,
     pub enable_flac: bool,
     pub timeout_ms: u64,
     pub max_results_per_provider: usize,
@@ -31,14 +31,14 @@ impl Default for SearchConfig {
         Self {
             mode: SearchMode::BestScore,
             providers: vec![
-                MusicSource::Kugou,
-                MusicSource::Kuwo,
-                MusicSource::BiliVideo,
-                MusicSource::Youtube,
+                SonarSource::Kugou,
+                SonarSource::Kuwo,
+                SonarSource::BiliVideo,
+                SonarSource::Youtube,
             ],
             enable_flac: true,
             timeout_ms: 10000,
-            max_results_per_provider: 20,
+            max_results_per_provider: 30,
             search_proxy: String::new(),
             youtube_proxy: String::new(),
         }
@@ -55,7 +55,7 @@ impl SearchConfig {
         self
     }
 
-    pub fn with_providers(mut self, providers: Vec<MusicSource>) -> Self {
+    pub fn with_providers(mut self, providers: Vec<SonarSource>) -> Self {
         self.providers = providers;
         self
     }
@@ -89,26 +89,26 @@ impl SearchConfig {
     }
 }
 
-pub struct MusicFinder {
-    providers: Vec<Arc<dyn MusicProvider>>,
+pub struct SonarFinder {
+    providers: Vec<Arc<dyn SonarProvider>>,
     config: SearchConfig,
 }
 
-impl MusicFinder {
+impl SonarFinder {
     pub fn new(config: SearchConfig) -> Self {
-        let mut providers: Vec<Arc<dyn MusicProvider>> = Vec::new();
+        let mut providers: Vec<Arc<dyn SonarProvider>> = Vec::new();
 
         for source in &config.providers {
-            let provider: Arc<dyn MusicProvider> = match source {
-                MusicSource::Kugou => Arc::new(KugouProvider::with_proxy(
+            let provider: Arc<dyn SonarProvider> = match source {
+                SonarSource::Kugou => Arc::new(KugouProvider::with_proxy(
                     config.enable_flac,
                     &config.search_proxy,
                 )),
-                MusicSource::Kuwo => Arc::new(KuwoProvider::with_proxy(&config.search_proxy)),
-                MusicSource::BiliVideo => {
+                SonarSource::Kuwo => Arc::new(KuwoProvider::with_proxy(&config.search_proxy)),
+                SonarSource::BiliVideo => {
                     Arc::new(BiliVideoProvider::with_proxy(&config.search_proxy))
                 }
-                MusicSource::Youtube => {
+                SonarSource::Youtube => {
                     Arc::new(YoutubeProvider::with_proxy(&config.youtube_proxy))
                 }
             };
@@ -123,7 +123,7 @@ impl MusicFinder {
     }
 
     /// The provider sources, ordered by priority (highest first).
-    pub fn sources(&self) -> Vec<MusicSource> {
+    pub fn sources(&self) -> Vec<SonarSource> {
         self.providers.iter().map(|p| p.source()).collect()
     }
 
@@ -165,7 +165,7 @@ impl MusicFinder {
         }
 
         if all_results.is_empty() {
-            return Err(crate::error::MusicError::NoResults);
+            return Err(crate::error::SonarError::NoResults);
         }
 
         let combined = self.merge_results(all_results, query.as_ref());
@@ -183,11 +183,9 @@ impl MusicFinder {
             }
         }
 
-        let scored_songs = self.score_songs(all_songs, query);
-
         // Tie-break equal scores by provider priority so the final ranking is
         // deterministic instead of depending on mpsc arrival order.
-        let priority_of = |source: MusicSource| {
+        let priority_of = |source: SonarSource| {
             self.providers
                 .iter()
                 .position(|p| p.source() == source)
@@ -195,48 +193,27 @@ impl MusicFinder {
         };
 
         let final_songs = match self.config.mode {
-            SearchMode::FirstReturned => scored_songs,
+            SearchMode::FirstReturned => all_songs,
             SearchMode::BestScore => {
-                let mut sorted = scored_songs;
-                sorted.sort_by(|a, b| {
-                    let score_b = b
-                        .raw_data
-                        .get("match_score")
-                        .and_then(|v| v.as_f64())
-                        .unwrap_or(0.0);
-                    let score_a = a
-                        .raw_data
-                        .get("match_score")
-                        .and_then(|v| v.as_f64())
-                        .unwrap_or(0.0);
-                    score_b
-                        .partial_cmp(&score_a)
+                let mut scored: Vec<(f64, Song)> = all_songs
+                    .into_iter()
+                    .map(|song| (self.calculate_match_score(&song, query), song))
+                    .collect();
+                scored.sort_by(|a, b| {
+                    b.0.partial_cmp(&a.0)
                         .unwrap_or(std::cmp::Ordering::Equal)
-                        .then_with(|| priority_of(a.source).cmp(&priority_of(b.source)))
+                        .then_with(|| priority_of(a.1.source).cmp(&priority_of(b.1.source)))
                 });
-                sorted
+                scored.into_iter().map(|(_, song)| song).collect()
             }
         };
 
         SearchResult {
             songs: final_songs,
-            source: MusicSource::Kugou,
+            source: SonarSource::Kugou,
             query: query.clone(),
             total: None,
         }
-    }
-
-    fn score_songs(&self, songs: Vec<Song>, query: &SearchQuery) -> Vec<Song> {
-        songs
-            .into_iter()
-            .map(|mut song| {
-                let score = self.calculate_match_score(&song, query);
-                song.raw_data["match_score"] = serde_json::Value::Number(
-                    serde_json::Number::from_f64(score).unwrap_or(serde_json::Number::from(0)),
-                );
-                song
-            })
-            .collect()
     }
 
     /// Score how well a song matches the query, based on the artist, the song
@@ -246,12 +223,7 @@ impl MusicFinder {
         let mut score = 0.0;
 
         let name = crate::util::normalize_for_match(&song.name);
-        let artist = song
-            .artists
-            .iter()
-            .map(|a| crate::util::normalize_for_match(&a.name))
-            .collect::<Vec<_>>()
-            .join(" ");
+        let artist = crate::util::normalize_for_match(&song.singer);
 
         let mut name_hits = 0.0;
         let mut artist_hits = 0.0;
@@ -297,7 +269,7 @@ impl MusicFinder {
     ) -> Result<(Song, crate::model::PlayUrlResult)> {
         let result = self.search(query).await?;
 
-        let provider_for = |source: MusicSource| {
+        let provider_for = |source: SonarSource| {
             self.providers
                 .iter()
                 .find(|p| p.source() == source)
@@ -319,7 +291,7 @@ impl MusicFinder {
             }
         }
 
-        Err(crate::error::MusicError::NoPlayUrl)
+        Err(crate::error::SonarError::NoPlayUrl)
     }
 
     /// Resolve a play URL for a specific song directly via the provider that
@@ -334,12 +306,12 @@ impl MusicFinder {
             .iter()
             .find(|p| p.source() == song.source)
             .cloned()
-            .ok_or(crate::error::MusicError::NoPlayUrl)?;
+            .ok_or(crate::error::SonarError::NoPlayUrl)?;
         let timeout = std::time::Duration::from_millis(self.config.timeout_ms);
         match tokio::time::timeout(timeout, provider.get_play_url(song, quality)).await {
             Ok(Ok(play_url)) => Ok(play_url),
             Ok(Err(e)) => Err(e),
-            Err(_) => Err(crate::error::MusicError::Timeout),
+            Err(_) => Err(crate::error::SonarError::Timeout),
         }
     }
 
@@ -361,7 +333,7 @@ impl MusicFinder {
         {
             return Some(l);
         }
-        for source in [MusicSource::Kugou, MusicSource::Kuwo] {
+        for source in [SonarSource::Kugou, SonarSource::Kuwo] {
             let candidate = self.search_first(&[source], song).await?;
             if let Ok(Some(l)) = self.get_lyrics(&candidate).await
                 && !l.trim().is_empty()
@@ -380,9 +352,9 @@ impl MusicFinder {
             return Some(song.pic_url.clone());
         }
         for source in [
-            MusicSource::Kuwo,
-            MusicSource::Kugou,
-            MusicSource::BiliVideo,
+            SonarSource::Kuwo,
+            SonarSource::Kugou,
+            SonarSource::BiliVideo,
         ] {
             let candidate = self.search_first(&[source], song).await?;
             if !candidate.pic_url.is_empty() {
@@ -395,12 +367,11 @@ impl MusicFinder {
     /// Search a set of providers for the first song matching `song` by keyword.
     async fn search_first(
         &self,
-        sources: &[MusicSource],
+        sources: &[SonarSource],
         song: &crate::model::Song,
     ) -> Option<Song> {
-        let artist = song.artists.first().map(|a| a.name.as_str()).unwrap_or("");
         let query =
-            SearchQuery::new(format!("{} {}", song.name, artist)).with_duration(song.duration);
+            SearchQuery::new(format!("{} {}", song.name, song.singer)).with_duration(song.duration);
         for source in sources {
             let provider = self
                 .providers
@@ -417,14 +388,14 @@ impl MusicFinder {
     }
 }
 
-impl Default for MusicFinder {
+impl Default for SonarFinder {
     fn default() -> Self {
         Self::new(SearchConfig::default())
     }
 }
 
 pub async fn quick_search(keyword: &str) -> Result<(Song, crate::model::PlayUrlResult)> {
-    let finder = MusicFinder::default();
+    let finder = SonarFinder::default();
     finder
         .search_and_get_url(&SearchQuery::new(keyword), None)
         .await
@@ -435,7 +406,7 @@ pub async fn quick_search_with_mode(
     mode: SearchMode,
 ) -> Result<(Song, crate::model::PlayUrlResult)> {
     let config = SearchConfig::new().with_mode(mode);
-    let finder = MusicFinder::new(config);
+    let finder = SonarFinder::new(config);
     finder
         .search_and_get_url(&SearchQuery::new(keyword), None)
         .await

@@ -1,15 +1,15 @@
-use musicx::{MusicFinder, MusicSource, SearchConfig, SearchQuery};
+use sonar::{SonarFinder, SonarSource, SearchConfig, SearchQuery};
 
 #[tokio::main]
 fn main() {
     let _ = rustls::crypto::ring::default_provider().install_default();
-    let finder = MusicFinder::new(SearchConfig::default().with_timeout(15000));
+    let finder = SonarFinder::new(SearchConfig::default().with_timeout(15000));
 
     for src in [
-        MusicSource::Kugou,
-        MusicSource::Kuwo,
-        MusicSource::BiliVideo,
-        MusicSource::Youtube,
+        SonarSource::Kugou,
+        SonarSource::Kuwo,
+        SonarSource::BiliVideo,
+        SonarSource::Youtube,
     ] {
         let result = finder
             .search(&SearchQuery::new("晴天 周杰伦"))
@@ -23,7 +23,7 @@ fn main() {
             "[{:?}] {} - {}  lyrics={}  cover={}",
             src,
             song.name,
-            song.artists[0].name,
+            song.singer,
             lyrics.as_ref().map(|l| l.lines().count()).unwrap_or(0),
             cover.as_ref().map(|c| c.len()).unwrap_or(0)
         );

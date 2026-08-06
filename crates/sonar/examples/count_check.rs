@@ -1,15 +1,15 @@
-use musicx::{MusicFinder, MusicSource, SearchConfig, SearchQuery};
+use sonar::{SonarFinder, SonarSource, SearchConfig, SearchQuery};
 
 #[tokio::main]
 fn main() {
     let _ = rustls::crypto::ring::default_provider().install_default();
     for src in [
-        MusicSource::Kuwo,
-        MusicSource::Kugou,
-        MusicSource::BiliVideo,
-        MusicSource::Youtube,
+        SonarSource::Kuwo,
+        SonarSource::Kugou,
+        SonarSource::BiliVideo,
+        SonarSource::Youtube,
     ] {
-        let finder = MusicFinder::new(
+        let finder = SonarFinder::new(
             SearchConfig::new()
                 .with_providers(vec![src])
                 .with_timeout(15000),
