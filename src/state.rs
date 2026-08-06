@@ -158,7 +158,7 @@ impl NavigationState {
 }
 
 /// A search backend selectable in the search bar. `Ncm` is the default and
-/// searches NetEase Cloud Music; the rest delegate to musicx providers.
+/// searches NetEase Cloud Music; the rest delegate to sonar providers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SearchProvider {
     #[default]
@@ -180,22 +180,22 @@ impl SearchProvider {
         }
     }
 
-    pub fn to_musicx(self) -> Option<musicx::MusicSource> {
+    pub fn to_sonar(self) -> Option<sonar::SonarSource> {
         match self {
             Self::Ncm => None,
-            Self::Kugou => Some(musicx::MusicSource::Kugou),
-            Self::Kuwo => Some(musicx::MusicSource::Kuwo),
-            Self::BiliVideo => Some(musicx::MusicSource::BiliVideo),
-            Self::Youtube => Some(musicx::MusicSource::Youtube),
+            Self::Kugou => Some(sonar::SonarSource::Kugou),
+            Self::Kuwo => Some(sonar::SonarSource::Kuwo),
+            Self::BiliVideo => Some(sonar::SonarSource::BiliVideo),
+            Self::Youtube => Some(sonar::SonarSource::Youtube),
         }
     }
 
-    pub fn from_musicx(source: musicx::MusicSource) -> Self {
+    pub fn from_sonar(source: sonar::SonarSource) -> Self {
         match source {
-            musicx::MusicSource::Kugou => Self::Kugou,
-            musicx::MusicSource::Kuwo => Self::Kuwo,
-            musicx::MusicSource::BiliVideo => Self::BiliVideo,
-            musicx::MusicSource::Youtube => Self::Youtube,
+            sonar::SonarSource::Kugou => Self::Kugou,
+            sonar::SonarSource::Kuwo => Self::Kuwo,
+            sonar::SonarSource::BiliVideo => Self::BiliVideo,
+            sonar::SonarSource::Youtube => Self::Youtube,
         }
     }
 }
@@ -207,7 +207,7 @@ pub struct SearchState {
     pub filter_queue_only: bool,
     pub unfiltered_songs: Option<Vec<Arc<ncm_api::SongInfo>>>,
     /// Available providers in display order (网易云 first, then configured
-    /// musicx sources). Populated from config at startup.
+    /// sonar sources). Populated from config at startup.
     pub providers: Vec<SearchProvider>,
     /// Currently selected search provider.
     pub provider: SearchProvider,
@@ -246,6 +246,7 @@ pub struct State {
     pub toast_msg: String,
     pub toast_time: Option<std::time::Instant>,
     pub playerbar_area: Rect,
+    pub queue_tab_scroll_x: u16,
 }
 
 pub fn theme_fallback() -> &'static Theme {
@@ -262,11 +263,11 @@ pub struct App {
     pub service: ApiService,
     pub picker: ratatui_image::picker::Picker,
     /// Blocking HTTP client for cover downloads (honours the proxy config).
-    pub cover_http: reqwest::blocking::Client,
-    /// Shared musicx finder used for per-provider search and playback fallback.
-    pub finder: Arc<musicx::MusicFinder>,
-    /// Original musicx songs for search results, keyed by synthetic song id.
-    pub musicx_songs: Arc<Mutex<HashMap<u64, Arc<musicx::Song>>>>,
+    pub cover_http: reqwest::Client,
+    /// Shared sonar finder used for per-provider search and playback fallback.
+    pub finder: Arc<sonar::SonarFinder>,
+    /// Original sonar songs for search results, keyed by synthetic song id.
+    pub sonar_songs: Arc<Mutex<HashMap<u64, Arc<sonar::Song>>>>,
 }
 
 impl App {
@@ -362,34 +363,34 @@ impl App {
             .join("pigma");
 
         let finder = Arc::new({
-            let mut sources: Vec<musicx::MusicSource> = Vec::new();
+            let mut sources: Vec<sonar::SonarSource> = Vec::new();
             for name in &config.source_fallback.providers {
                 let source = match name.as_str() {
-                    "kuwo" => musicx::MusicSource::Kuwo,
-                    "kugou" => musicx::MusicSource::Kugou,
-                    "bilivideo" => musicx::MusicSource::BiliVideo,
-                    "youtube" => musicx::MusicSource::Youtube,
+                    "kuwo" => sonar::SonarSource::Kuwo,
+                    "kugou" => sonar::SonarSource::Kugou,
+                    "bilivideo" => sonar::SonarSource::BiliVideo,
+                    "youtube" => sonar::SonarSource::Youtube,
                     _ => continue,
                 };
                 if !sources.contains(&source) {
                     sources.push(source);
                 }
             }
-            let search_config = musicx::SearchConfig::new()
+            let search_config = sonar::SearchConfig::new()
                 .with_providers(sources)
                 .with_timeout(config.source_fallback.timeout_ms)
                 .with_search_proxy(search_proxy.to_string())
                 .with_youtube_proxy(youtube_proxy.to_string());
-            musicx::MusicFinder::new(search_config)
+            sonar::SonarFinder::new(search_config)
         });
 
         // Search providers offered in the search bar: 网易云 always first,
-        // followed by the configured musicx fallback sources.
+        // followed by the configured sonar fallback sources.
         let mut search_providers = vec![SearchProvider::Ncm];
         for source in finder
             .sources()
             .iter()
-            .map(|s| SearchProvider::from_musicx(*s))
+            .map(|s| SearchProvider::from_sonar(*s))
         {
             if !search_providers.contains(&source) {
                 search_providers.push(source);
@@ -427,7 +428,7 @@ impl App {
         };
 
         let cover_http = {
-            let mut builder = reqwest::blocking::Client::builder();
+            let mut builder = reqwest::Client::builder();
             if !search_proxy.is_empty() {
                 builder = builder
                     .proxy(reqwest::Proxy::all(search_proxy).map_err(color_eyre::Report::msg)?);
@@ -435,8 +436,8 @@ impl App {
             builder.build()?
         };
 
-        let musicx_enabled = config.source_fallback.enabled;
-        let musicx_songs: Arc<Mutex<HashMap<u64, Arc<musicx::Song>>>> =
+        let sonar_enabled = config.source_fallback.enabled;
+        let sonar_songs: Arc<Mutex<HashMap<u64, Arc<sonar::Song>>>> =
             Arc::new(Mutex::new(HashMap::new()));
         let mut state = State {
             running: true,
@@ -470,6 +471,7 @@ impl App {
             toast_msg: String::new(),
             toast_time: None,
             playerbar_area: Rect::default(),
+            queue_tab_scroll_x: 0,
         };
         state.navigation.search.providers = search_providers;
         Ok(Self {
@@ -482,15 +484,15 @@ impl App {
                 quality,
                 stream_client,
                 Arc::clone(&finder),
-                musicx_enabled,
-                Arc::clone(&musicx_songs),
+                sonar_enabled,
+                Arc::clone(&sonar_songs),
             ),
             state,
             theme_registry,
             picker,
             cover_http,
             finder,
-            musicx_songs,
+            sonar_songs,
         })
     }
 
@@ -540,5 +542,28 @@ impl App {
     pub fn toast(&mut self, msg: String) {
         self.state.toast_msg = msg;
         self.state.toast_time = Some(std::time::Instant::now());
+    }
+
+    /// Breadcrumb key for the current page: the last breadcrumb level's
+    /// subtitle, falling back to the focused nav item's name. Distinct pages
+    /// get distinct playback queues.
+    pub fn current_queue_key(&self) -> String {
+        let nav = &self.state.navigation;
+        if let Some(sub) = nav.nav.subtitle.clone().filter(|s| !s.trim().is_empty()) {
+            return sub;
+        }
+        nav.nav
+            .sections
+            .get(nav.nav.focus_section)
+            .and_then(|s| {
+                nav.nav
+                    .section_states
+                    .get(nav.nav.focus_section)
+                    .and_then(|st| st.selected())
+                    .and_then(|i| s.items.get(i))
+            })
+            .map(|item| item.name.clone())
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| "默认队列".into())
     }
 }

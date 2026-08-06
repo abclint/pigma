@@ -39,6 +39,14 @@ use self::queue::PlaylistQueue;
 use self::source::AudioSource;
 use self::storage::PlaylistStorage;
 
+/// Fixed queue key (display name) shared by every third-party (sonar) search
+/// queue; all such songs are stored in the single `thirdparty_source.json`.
+pub const THIRD_PARTY_QUEUE_KEY: &str = "第三方搜索";
+
+/// Fixed queue key (display name) shared by every NCM search queue; all such
+/// songs are stored in the single `ncm_search.json`.
+pub const NCM_SEARCH_QUEUE_KEY: &str = "官方搜索";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PlayMode {
     Sequential,
@@ -218,6 +226,24 @@ pub fn parse_lyric_lines(raw: &[String]) -> Vec<LyricLine> {
 pub struct PlaybackEngine {
     pub state: PlaybackState,
     pub(super) queue: PlaylistQueue,
+    /// Display name of the currently loaded queue (tab title).
+    active_queue_key: String,
+    /// Display name of the queue the current song was started from. Unlike
+    /// `active_queue_key`, it is not changed when browsing other tabs while
+    /// playing, so the tab bar can highlight where the music actually comes
+    /// from.
+    playing_queue_key: String,
+    /// Canonical id of the currently loaded queue (`q_<hash>` / `q_thirdparty`).
+    /// Only this queue stays in memory; the others live on disk and are loaded
+    /// on demand when switched.
+    active_queue_id: String,
+    /// Cached `(id, display)` of all known queues (disk + active), refreshed on
+    /// queue activation so the Playlist page tab bar doesn't scan the disk per
+    /// frame. The id is the real index; display is only for humans.
+    queue_entries_cache: Vec<(String, String)>,
+    /// Display names of all known queues, derived from `queue_entries_cache`
+    /// for the tab bar rendering.
+    queue_keys_cache: Vec<String>,
     strategy: Strategy,
     storage: PlaylistStorage,
     source: AudioSource,
@@ -236,14 +262,19 @@ impl PlaybackEngine {
         cache: crate::cache::CacheManager,
         quality: SongQuality,
         stream_client: reqwest::Client,
-        finder: Arc<musicx::MusicFinder>,
-        musicx_enabled: bool,
-        musicx_songs: Arc<std::sync::Mutex<HashMap<u64, Arc<musicx::Song>>>>,
+        finder: Arc<sonar::SonarFinder>,
+        sonar_enabled: bool,
+        sonar_songs: Arc<std::sync::Mutex<HashMap<u64, Arc<sonar::Song>>>>,
     ) -> Self {
         let storage = PlaylistStorage::new();
         let mut this = Self {
             state: PlaybackState::default(),
             queue: PlaylistQueue::new(),
+            active_queue_key: String::new(),
+            playing_queue_key: String::new(),
+            active_queue_id: String::new(),
+            queue_entries_cache: Vec::new(),
+            queue_keys_cache: Vec::new(),
             strategy: mode::Strategy::Sequential,
             storage,
             source: AudioSource::new(
@@ -252,8 +283,8 @@ impl PlaybackEngine {
                 quality,
                 stream_client,
                 finder,
-                musicx_enabled,
-                musicx_songs,
+                sonar_enabled,
+                sonar_songs,
                 event_tx.clone(),
             ),
             controller: PlaybackHandle::new(event_tx.clone()),
@@ -300,37 +331,178 @@ impl PlaybackEngine {
         &self.queue.songs
     }
 
-    pub fn queue_history(&self) -> &[Arc<SongInfo>] {
-        &self.queue.history
-    }
-
     pub fn queue_current_index(&self) -> Option<usize> {
         self.queue.current_index
     }
 
     pub fn set_queue_songs(&mut self, songs: Vec<Arc<SongInfo>>) {
-        self.queue.songs = songs;
+        self.queue.set_songs(songs);
     }
 
     /// Replace the queue with a subset of `full` selected by `indices`, cloning
     /// only the selected songs (avoids cloning the whole list on every filter
     /// keystroke).
     pub fn set_queue_indices(&mut self, full: &[Arc<SongInfo>], indices: &[usize]) {
-        self.queue.songs = indices
+        let songs = indices
             .iter()
             .filter_map(|&i| full.get(i).map(Arc::clone))
             .collect();
+        self.queue.set_songs(songs);
     }
 
-    pub fn cache(&self) -> &crate::cache::CacheManager {
-        &self.source.cache
+    /// Key of the currently loaded queue.
+    pub fn queue_key(&self) -> &str {
+        &self.active_queue_key
     }
 
-    pub fn play_songs(&mut self, songs: Vec<SongInfo>, index: usize) {
+    /// Key of the queue the current song was started from (may differ from
+    /// [`Self::queue_key`] while browsing other tabs during playback).
+    pub fn playing_queue_key(&self) -> &str {
+        &self.playing_queue_key
+    }
+
+    /// Cached breadcrumb keys of all queues (disk + active), in no particular
+    /// order. Refresh with [`Self::refresh_queue_keys`] after any change.
+    pub fn queue_keys(&self) -> &[String] {
+        &self.queue_keys_cache
+    }
+
+    /// Rebuild the cached queue list from disk plus the active queue. The list
+    /// only ever grows: a queue's file is written asynchronously
+    /// (`spawn_blocking`), so a key seen once (or still being persisted) must
+    /// not vanish from the cache on a later synchronous scan.
+    pub fn refresh_queue_keys(&mut self) {
+        let mut entries = self.queue_entries_cache.clone();
+        for (id, display) in self.storage.list_queues() {
+            if !entries.iter().any(|(i, _)| i == &id) {
+                entries.push((id, display));
+            }
+        }
+        if !self.active_queue_id.is_empty()
+            && !entries.iter().any(|(i, _)| i == &self.active_queue_id)
+        {
+            entries.push((self.active_queue_id.clone(), self.active_queue_key.clone()));
+        }
+        entries.sort();
+        self.queue_entries_cache = entries;
+        self.queue_keys_cache = self
+            .queue_entries_cache
+            .iter()
+            .map(|(_, d)| d.clone())
+            .collect();
+    }
+
+    /// Persist the currently loaded queue to its per-id file and record it as
+    /// the active one. A no-op when no id is set (nothing played yet).
+    fn persist_active_queue(&self) {
+        if self.active_queue_id.is_empty() {
+            return;
+        }
+        self.storage.save_queue(
+            &self.active_queue_id,
+            &self.active_queue_key,
+            &self.queue.songs,
+            &self.queue.history,
+            self.queue.current_index,
+            &self.state.mode,
+            self.state.volume,
+            self.state.progress,
+        );
+    }
+
+    /// Blocking counterpart of [`Self::persist_active_queue`], used on shutdown
+    /// so the queue file is guaranteed written before the process exits.
+    fn persist_active_queue_blocking(&self) {
+        if self.active_queue_id.is_empty() {
+            return;
+        }
+        self.storage.save_queue_sync(
+            &self.active_queue_id,
+            &self.active_queue_key,
+            &self.queue.songs,
+            &self.queue.history,
+            self.queue.current_index,
+            &self.state.mode,
+            self.state.volume,
+            self.state.progress,
+        );
+    }
+
+    /// Activate the queue whose display key is `key`, deriving its canonical id
+    /// from the display name. Called when playing dated content where `key` is
+    /// freshly produced (`dated_key`), so hashing it is lossless.
+    pub fn activate_queue(&mut self, key: &str) {
+        let id = PlaylistStorage::queue_id(key);
+        self.activate_by_id(key, &id);
+    }
+
+    /// Activate a queue by its canonical id and display name, saving the
+    /// previously loaded queue first. Playback state is untouched — this only
+    /// swaps which queue the engine operates on.
+    fn activate_by_id(&mut self, display: &str, id: &str) {
+        if self.active_queue_id == id {
+            return;
+        }
+        self.persist_active_queue();
+        let saved = self.storage.load_queue_by_id(id);
+        let queue = match saved {
+            Some(s) => PlaylistQueue::from_parts(
+                s.queue.into_iter().map(Arc::new).collect(),
+                s.history,
+                s.current_index,
+            ),
+            None => PlaylistQueue::new(),
+        };
+        self.queue = queue;
+        self.active_queue_key = display.to_string();
+        self.active_queue_id = id.to_string();
+        self.strategy =
+            mode::create_strategy(&self.state.mode, self.queue.len(), self.queue.current_index);
+        self.refresh_queue_keys();
+    }
+
+    /// Switch to the next/previous saved queue (for the Playlist page Tab
+    /// binding). Returns the key that was activated, or `None` when there is
+    /// only one queue to choose from.
+    pub fn switch_queue(&mut self, forward: bool) -> Option<String> {
+        self.refresh_queue_keys();
+        let entries = self.queue_entries_cache.clone();
+        if entries.len() <= 1 {
+            return None;
+        }
+        let idx = entries
+            .iter()
+            .position(|(id, _)| id == &self.active_queue_id)
+            .unwrap_or(0);
+        let next = if forward {
+            &entries[(idx + 1) % entries.len()]
+        } else {
+            &entries[(idx + entries.len() - 1) % entries.len()]
+        };
+        if next.0 == self.active_queue_id {
+            return None;
+        }
+        self.activate_by_id(&next.1, &next.0);
+        Some(self.active_queue_key.clone())
+    }
+
+    /// Append today's `MM-DD` to a breadcrumb context, producing the full queue
+    /// key that is stored in the queue file (and shown as its tab). Time-based
+    /// content like 每日推荐 therefore gets one queue per day; replaying the
+    /// same context on the same day reuses the existing queue instead of
+    /// creating a new one.
+    fn dated_key(&self, context: &str) -> String {
+        format!("{context} {}", crate::utils::time::local_month_day())
+    }
+
+    /// Replace the queue for `key` with `songs` and start playing `index`.
+    pub fn play_songs(&mut self, key: &str, songs: Vec<SongInfo>, index: usize) {
         if songs.is_empty() || index >= songs.len() {
             return;
         }
-
+        let key = self.dated_key(key);
+        self.activate_queue(&key);
+        self.playing_queue_key = self.active_queue_key.clone();
         self.controller.stop();
         let songs: Vec<Arc<SongInfo>> = songs.into_iter().map(Arc::new).collect();
         self.queue = PlaylistQueue::from_songs(songs, index);
@@ -339,11 +511,21 @@ impl PlaybackEngine {
         self.start_current_song(None);
     }
 
-    pub fn append_and_play(&mut self, songs: &[SongInfo], index: usize) {
+    /// Append `songs` to a fixed, non-dated queue key and start playing
+    /// `index`. Used by search (third-party & NCM) so all such songs share one
+    /// queue instead of one per keyword/day. If the song is already in the
+    /// queue, just play the existing entry instead of adding a duplicate
+    /// (re-pressing Enter on a search result).
+    pub fn append_and_play_key(&mut self, key: &str, songs: &[SongInfo], index: usize) {
         if songs.is_empty() || index >= songs.len() {
             return;
         }
-
+        self.activate_queue(key);
+        self.playing_queue_key = self.active_queue_key.clone();
+        if let Some(pos) = self.queue.find_song_index(songs[index].id) {
+            self.play_index(pos);
+            return;
+        }
         self.controller.stop();
         let offset = self.queue.append(songs);
         self.queue.current_index = Some(offset + index);
@@ -358,10 +540,18 @@ impl PlaybackEngine {
         }
 
         self.controller.stop();
+        self.playing_queue_key = self.active_queue_key.clone();
         self.queue.advance_to(index);
         self.strategy =
             mode::create_strategy(&self.state.mode, self.queue.len(), self.queue.current_index);
         self.start_current_song(None);
+    }
+
+    /// Add `song` to the current queue right after the playing song.
+    /// Keeps the rest of the queue intact. Does not interrupt the currently
+    /// playing song.
+    pub fn add_next(&mut self, song: Arc<SongInfo>) {
+        self.queue.insert_next(vec![song]);
     }
 
     pub fn next(&mut self) {
@@ -391,8 +581,8 @@ impl PlaybackEngine {
             return;
         }
 
-        if let Some(prev_song) = self.queue.pop_history()
-            && let Some(pos) = self.queue.find_song_index(prev_song.id)
+        if let Some(prev_id) = self.queue.pop_history()
+            && let Some(pos) = self.queue.find_song_index(prev_id)
         {
             self.controller.stop();
             self.queue.current_index = Some(pos);
@@ -438,19 +628,38 @@ impl PlaybackEngine {
     }
 
     pub fn clear_queue(&mut self) {
-        self.controller.stop();
+        // Only stop the current playback when the cleared queue is the one the
+        // playing song came from. Clearing a different queue (viewed on the
+        // Playlist page after switching) must not kill the current song.
+        let playing_from_this_queue = self
+            .queue
+            .current_song()
+            .zip(self.state.current_song.as_ref())
+            .is_some_and(|(a, b)| a.id == b.id);
         self.queue = PlaylistQueue::new();
         self.strategy = mode::create_strategy(&self.state.mode, 0, None);
-        self.state.playing = false;
-        self.state.paused = false;
-        self.state.current_song = None;
-        self.state.progress = 0.0;
-        if let Ok(mut registry) = self.source.musicx_songs.lock() {
+        if playing_from_this_queue {
+            self.controller.stop();
+            self.state.playing = false;
+            self.state.paused = false;
+            self.state.current_song = None;
+            self.state.progress = 0.0;
+        }
+        if let Ok(mut registry) = self.source.sonar_songs.lock() {
             registry.clear();
         }
-        self.save_session();
+        if !self.active_queue_id.is_empty() {
+            self.storage
+                .delete_queue(&self.active_queue_id, &self.active_queue_key);
+            self.queue_keys_cache
+                .retain(|k| k != &self.active_queue_key);
+            self.queue_entries_cache
+                .retain(|(i, _)| i != &self.active_queue_id);
+            self.active_queue_id.clear();
+            self.active_queue_key.clear();
+        }
+        self.playing_queue_key.clear();
     }
-
     pub fn seek_relative(&mut self, delta_secs: f64) {
         let duration = match self.queue.current_song() {
             Some(s) => s.duration,
@@ -478,10 +687,6 @@ impl PlaybackEngine {
     pub fn set_volume(&mut self, volume: f64) {
         self.state.volume = volume;
         self.controller.set_volume(volume as f32);
-    }
-
-    pub fn volume(&self) -> f64 {
-        self.state.volume
     }
 
     pub fn set_playlist_id(&mut self, id: u64) {
@@ -527,10 +732,6 @@ impl PlaybackEngine {
         self.state.on_progress(position, total);
     }
 
-    pub fn on_playback_finished(&mut self) {
-        self.handle_finished();
-    }
-
     pub fn on_playback_error(&mut self, err: String) {
         //todo 这种实现可能存在问题，重写
         // buffer underrun/overrun is transient — rodio recovers automatically
@@ -569,81 +770,40 @@ impl PlaybackEngine {
     }
 
     pub fn save_session(&self) {
-        self.storage.save_auto(
-            &self.queue.songs,
-            &self.queue.history,
-            self.queue.current_index,
-            &self.state.mode,
-            self.state.volume,
-            self.state.progress,
-        );
-        let musicx_songs = self
-            .source
-            .musicx_songs
-            .lock()
-            .map(|m| {
-                m.iter()
-                    .map(|(k, v)| (*k, (**v).clone()))
-                    .collect::<std::collections::HashMap<_, _>>()
-            })
-            .unwrap_or_default();
-        self.source.cache.set_musicx_songs(&musicx_songs);
+        self.persist_active_queue_blocking();
         self.source.cache.cleanup_index();
         self.source.cache.flush_index();
     }
 
-    pub fn save_playlist(&self, name: &str) -> bool {
-        self.storage.save_playlist(name, &self.queue.songs)
-    }
-
-    pub fn load_playlist(&mut self, name: &str) -> bool {
-        match self.storage.load_playlist(name) {
-            Some(songs) if !songs.is_empty() => {
-                self.play_songs(songs, 0);
-                true
-            }
-            _ => false,
-        }
-    }
-
-    pub fn delete_playlist(&self, name: &str) -> bool {
-        self.storage.delete_playlist(name)
-    }
-
-    pub fn list_playlists(&self) -> Vec<String> {
-        self.storage.list_playlists()
-    }
-
     fn restore_session(&mut self) {
-        if let Some(saved) = self.storage.load_auto()
-            && !saved.queue.is_empty()
-        {
-            self.queue = PlaylistQueue {
-                songs: saved.queue.into_iter().map(Arc::new).collect(),
-                history: saved.history.into_iter().map(Arc::new).collect(),
-                current_index: saved.current_index,
-            };
-            self.state.volume = saved.volume;
-            self.strategy =
-                mode::create_strategy(&saved.mode, self.queue.len(), self.queue.current_index);
-            self.state.mode = saved.mode;
-            self.controller.set_volume(saved.volume as f32);
-
-            if saved.current_index.is_some() {
-                self.state.current_song = self.queue.current_song().cloned();
-                self.state.progress = saved.progress;
-            }
-
-            // Restore the musicx registry so lyric/cover fallback works for
-            // search-result songs after a restart. It is persisted in the
-            // cache index (`cache_index.json`), not the queue file.
-            let musicx_songs = self.source.cache.musicx_songs_snapshot();
-            if !musicx_songs.is_empty()
-                && let Ok(mut registry) = self.source.musicx_songs.lock()
+        if let Some(id) = self.storage.load_active_id() {
+            let display = self
+                .storage
+                .display_for_id(&id)
+                .unwrap_or_else(|| id.clone());
+            if let Some(saved) = self.storage.load_queue_by_id(&id)
+                && !saved.queue.is_empty()
             {
-                registry.extend(musicx_songs.into_iter().map(|(k, v)| (k, Arc::new(v))));
+                self.active_queue_id = id;
+                self.active_queue_key = display;
+                self.queue = PlaylistQueue::from_parts(
+                    saved.queue.into_iter().map(Arc::new).collect(),
+                    saved.history,
+                    saved.current_index,
+                );
+                self.state.volume = saved.volume;
+                self.strategy =
+                    mode::create_strategy(&saved.mode, self.queue.len(), self.queue.current_index);
+                self.state.mode = saved.mode;
+                self.controller.set_volume(saved.volume as f32);
+
+                if saved.current_index.is_some() {
+                    self.state.current_song = self.queue.current_song().cloned();
+                    self.state.progress = saved.progress;
+                }
             }
         }
+        self.refresh_queue_keys();
     }
 
     pub(super) fn start_current_song(&mut self, seek_time: Option<Duration>) {

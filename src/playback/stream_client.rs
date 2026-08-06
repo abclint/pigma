@@ -25,13 +25,18 @@ impl HeadersClient {
     fn request(&self, url: &reqwest::Url) -> reqwest::RequestBuilder {
         let mut headers = HeaderMap::new();
         headers.insert(USER_AGENT, HeaderValue::from_static(BROWSER_UA));
-        if let Some(host) = url.host_str()
-            && (host.ends_with("bilivideo.com") || host.ends_with(".hdslb.com"))
-        {
-            headers.insert(
-                REFERER,
-                HeaderValue::from_static("https://www.bilibili.com"),
-            );
+        if let Some(host) = url.host_str() {
+            let is_bili = host.ends_with("bilivideo.com")
+                || host.ends_with(".hdslb.com")
+                || host.ends_with(".mountaintoys.cn")
+                || host.contains("bilibili")
+                || host.contains("bilivideo");
+            if is_bili {
+                headers.insert(
+                    REFERER,
+                    HeaderValue::from_static("https://www.bilibili.com"),
+                );
+            }
         }
         self.inner.get(url.clone()).headers(headers)
     }

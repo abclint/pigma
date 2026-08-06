@@ -54,9 +54,9 @@ pub struct Config {
     /// 导航栏位置：left（左侧，默认）、right（右侧）、top（顶部）或 bottom（底部）。
     #[serde(default)]
     pub navigation_position: NavPosition,
-    /// musicx 兜底源配置（NCM 播放失败时的多源兜底）。
+    /// sonar 兜底源配置（NCM 播放失败时的多源兜底）。
     #[serde(default)]
-    pub source_fallback: MusicxConfig,
+    pub source_fallback: SonarConfig,
 }
 
 fn default_proxy() -> String {
@@ -93,10 +93,10 @@ fn default_search_limit() -> u16 {
     100
 }
 
-/// 兜底源配置（musicx 多源兜底）。
+/// 兜底源配置（sonar 多源兜底）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct MusicxConfig {
+pub struct SonarConfig {
     /// 是否启用兜底源。
     pub enabled: bool,
     /// 参与兜底的源，按优先级从高到低排列：
@@ -106,7 +106,7 @@ pub struct MusicxConfig {
     pub timeout_ms: u64,
 }
 
-impl Default for MusicxConfig {
+impl Default for SonarConfig {
     fn default() -> Self {
         Self {
             enabled: true,
@@ -136,7 +136,7 @@ impl Default for Config {
             cache: CacheConfig::default(),
             playerbar: PlayerbarConfig::default(),
             titles: TitlesConfig::default(),
-            source_fallback: MusicxConfig::default(),
+            source_fallback: SonarConfig::default(),
             themes: Vec::new(),
             navigation: NavConfig::default(),
             columns: ColumnsConfig::default(),

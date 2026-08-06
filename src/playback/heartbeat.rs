@@ -87,6 +87,7 @@ impl PlaybackEngine {
         }
 
         self.queue.songs.push(Arc::new(song));
+        self.queue.rebuild_index();
         self.queue.current_index = Some(self.queue.len() - 1);
         self.start_current_song(None);
     }

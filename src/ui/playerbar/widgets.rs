@@ -57,12 +57,12 @@ pub fn draw_song_info(f: &mut Frame, player: &PlaybackState, colors: &Theme, are
 
 pub fn draw_controls(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
     let play_icon = if player.paused || !player.playing {
-        "\u{25b6}"
+        "\u{f040a}"
     } else {
-        "\u{23f8}"
+        "\u{f03e4}"
     };
     let controls = Line::from(vec![
-        Span::styled("\u{23ee}", Style::default().fg(colors.muted)),
+        Span::styled("\u{f049}", Style::default().fg(colors.muted)),
         Span::raw("   "),
         Span::styled(
             play_icon,
@@ -71,7 +71,7 @@ pub fn draw_controls(f: &mut Frame, player: &PlaybackState, colors: &Theme, area
                 .add_modifier(Modifier::BOLD),
         ),
         Span::raw("   "),
-        Span::styled("\u{23ed}", Style::default().fg(colors.muted)),
+        Span::styled("\u{f050}", Style::default().fg(colors.muted)),
     ])
     .alignment(Alignment::Center);
     f.render_widget(Paragraph::new(controls), area);

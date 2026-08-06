@@ -28,6 +28,7 @@ const HELP_ITEMS: &[(&str, &str)] = &[
     ("/", "搜索 / 过滤"),
     ("s", "喜欢选中歌曲"),
     ("S", "喜欢当前播放歌曲"),
+    ("a", "添加到队列下一首播放"),
     ("d", "不喜欢（每日推荐）"),
     ("c", "行 / 单元格模式"),
     ("b", "切换边框模式"),
@@ -52,7 +53,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         border: &app.state.border,
         tick: app.state.tick,
     };
-    let block = super::create_block("\u{25BA} HELP \u{25C4}", &style, false);
+    let block = super::create_block_surfaced("\u{25BA} HELP \u{25C4}", &style, false);
     let inner = block.inner(popup_area);
 
     f.render_widget(Clear, popup_area);

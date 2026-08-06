@@ -214,29 +214,6 @@ impl ApiService {
         }
     }
 
-    // ── Login ────────────────────────────────────────────────────────────
-
-    pub async fn login_email(
-        &self,
-        username: &str,
-        password: &str,
-    ) -> Result<ncm_api::LoginInfo, ncm_api::NcmError> {
-        self.client.login(username, password).await
-    }
-
-    pub async fn login_phone(
-        &self,
-        ctcode: &str,
-        phone: &str,
-        captcha: &str,
-    ) -> Result<ncm_api::LoginInfo, ncm_api::NcmError> {
-        self.client.login_cellphone(ctcode, phone, captcha).await
-    }
-
-    pub async fn send_captcha(&self, ctcode: &str, phone: &str) -> Result<(), ncm_api::NcmError> {
-        self.client.captcha(ctcode, phone).await
-    }
-
     pub async fn login_qr_create(&self) -> Result<(String, String), ncm_api::NcmError> {
         self.client.login_qr_create().await
     }
@@ -285,13 +262,6 @@ impl ApiService {
     }
 
     // ── Cloud disk upload ────────────────────────────────────────────────
-
-    pub async fn upload_song(
-        &self,
-        path: &Path,
-    ) -> Result<ncm_api::CloudUploadResult, ncm_api::NcmError> {
-        self.client.upload_song(path).await
-    }
 
     pub async fn upload_song_with_meta(
         &self,

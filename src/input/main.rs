@@ -1,6 +1,7 @@
 use crate::event::{CommandEvent, NavigationEvent, PlaybackEvent};
 use crate::state::{App, ContentState, Page, TableMode};
 use crossterm::event::{KeyCode, KeyEvent, MouseEventKind};
+use std::sync::Arc;
 
 use super::content::{
     cell_enter_action, content_select_first, content_select_last, content_select_next,
@@ -17,6 +18,20 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
             app.state.events.send(NavigationEvent::ContentRestore);
         }
         KeyCode::Char('q') => app.state.events.send(crate::event::AppEvent::Quit),
+        KeyCode::Tab if app.state.navigation.page == Page::Playlist => {
+            if let Some(key) = app.playback.switch_queue(true) {
+                app.state.navigation.playlist_selected =
+                    app.playback.queue_current_index().unwrap_or(0);
+                app.toast(format!("▣ 队列: {key}"));
+            }
+        }
+        KeyCode::BackTab if app.state.navigation.page == Page::Playlist => {
+            if let Some(key) = app.playback.switch_queue(false) {
+                app.state.navigation.playlist_selected =
+                    app.playback.queue_current_index().unwrap_or(0);
+                app.toast(format!("▣ 队列: {key}"));
+            }
+        }
         KeyCode::Tab => navigate_nav_down(app),
         KeyCode::BackTab => navigate_nav_up(app),
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
@@ -152,6 +167,24 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
                     app.state.events.send(PlaybackEvent::LikeSong(song.id));
                     app.toast(format!("♥  {}", song.name));
                 }
+            }
+        }
+        KeyCode::Char('a' | 'A') => {
+            let song =/* if app.state.navigation.page == Page::Playlist {
+                app.playback
+                    .song_at(app.state.navigation.playlist_selected)
+                    .cloned()
+            } else */ if let ContentState::Songs(songs) = app.state.navigation.content.as_ref() {
+                songs
+                    .get(app.state.navigation.content_selected)
+                    .cloned()
+                    .map(Arc::new)
+            } else {
+                None
+            };
+            if let Some(song) = song {
+                app.playback.add_next(song.clone());
+                app.toast(format!("⏭  下一首: {}", song.name));
             }
         }
         KeyCode::Char('d' | 'D') => {

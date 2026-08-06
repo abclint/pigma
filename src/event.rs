@@ -7,7 +7,7 @@ use ncm_api::{LoginInfo, SongInfo};
 use tokio::sync::mpsc;
 
 use crate::playback::LyricLine;
-use crate::state::{CommandAction, ContentState, Page, PaginationInfo, SplashLogEntry};
+use crate::state::{ContentState, Page, PaginationInfo, SplashLogEntry};
 
 #[derive(Clone, Debug)]
 pub enum Event {
@@ -40,7 +40,6 @@ pub enum AuthEvent {
     Login,
     Success(LoginInfo),
     Error(String),
-    CaptchaSent,
     QRCreated { url: String, key: String },
     QRStatus(String),
 }
@@ -65,7 +64,6 @@ pub enum PlaybackEvent {
     SetPlaylistId(u64),
     LikeSong(u64),
     DislikeSong(u64),
-    /// stream-download finished caching the given song into the cache file.
     Cached(u64),
 }
 
@@ -96,7 +94,6 @@ pub enum NavigationEvent {
 #[derive(Clone, Debug)]
 pub enum CommandEvent {
     Panel(CommandPanelAction),
-    Execute(CommandAction),
     ToggleBordered,
 }
 

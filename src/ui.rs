@@ -18,7 +18,7 @@ mod topbar;
 use ratatui::{
     Frame,
     layout::{Alignment, Rect},
-    style::Style,
+    style::{Color, Style},
     widgets::{
         Block, BorderType, Borders, Clear, Padding, Paragraph, Scrollbar, ScrollbarOrientation,
         ScrollbarState,
@@ -230,6 +230,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                         app.state.navigation.playlist_selected,
                         &bs,
                         &app.config.titles.playlist,
+                        &mut app.state.queue_tab_scroll_x,
                         lay.content,
                     );
                 }
@@ -276,7 +277,7 @@ fn draw_toast(f: &mut Frame, app: &App, colors: &Theme) {
     let block = Block::default()
         .borders(Borders::TOP)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(colors.accent))
+        .border_style(Style::default().fg(colors.border))
         .style(Style::default().bg(colors.surface));
 
     let p = Paragraph::new(format!(" {} ", app.state.toast_msg))
@@ -289,13 +290,26 @@ fn draw_toast(f: &mut Frame, app: &App, colors: &Theme) {
 pub(crate) fn create_block<'a>(
     title: &'a str,
     style: &'a BlockStyle<'a>,
-    focused: bool,
+    _focused: bool,
 ) -> CornerBlock<'a> {
-    let border_color = if focused {
-        style.colors.accent
-    } else {
-        style.colors.muted
-    };
+    create_block_bg(title, style, _focused, style.colors.bg)
+}
+
+pub(crate) fn create_block_surfaced<'a>(
+    title: &'a str,
+    style: &'a BlockStyle<'a>,
+    _focused: bool,
+) -> CornerBlock<'a> {
+    create_block_bg(title, style, _focused, style.colors.surface)
+}
+
+fn create_block_bg<'a>(
+    title: &'a str,
+    style: &'a BlockStyle<'a>,
+    _focused: bool,
+    no_border_bg: Color,
+) -> CornerBlock<'a> {
+    let border_color = style.colors.border;
     let border_type = if style.border.rounded {
         BorderType::Rounded
     } else {
@@ -308,23 +322,18 @@ pub(crate) fn create_block<'a>(
             .border_type(border_type)
             .border_style(Style::default().fg(border_color))
             .title(title_line)
-            .title_style(Style::default().fg(border_color))
+            .title_style(Style::default().fg(style.colors.muted))
     } else {
         Block::default()
             .borders(Borders::NONE)
-            .border_style(Style::default().fg(if focused {
-                style.colors.accent
-            } else {
-                style.colors.surface
-            }))
-            .style(Style::default().bg(style.colors.bg))
+            .border_style(Style::default().fg(border_color))
+            .style(Style::default().bg(no_border_bg))
             .title(title_line)
-            .title_style(Style::default().fg(border_color))
+            .title_style(Style::default().fg(style.colors.muted))
             .padding(Padding::horizontal(1))
     };
-    let corner = style.colors.accent;
     CornerBlock::new(block)
-        .corner_color(corner)
+        .corner_color(style.colors.accent)
         .corner_sizes(2, 1)
         .follow_corner_color(style.border.follow_corner_color)
         .border_gradient(style.border.border_gradient)

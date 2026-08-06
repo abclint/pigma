@@ -85,9 +85,9 @@ pub fn build_modern(
     .split(cols[1]);
 
     let progress_cols = Layout::horizontal([
-        Constraint::Length(6),
+        Constraint::Length(9),
         Constraint::Min(10),
-        Constraint::Length(6),
+        Constraint::Length(9),
     ])
     .split(right_rows[0]);
 
