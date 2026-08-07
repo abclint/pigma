@@ -36,10 +36,8 @@ fn kitty_available() -> bool {
                 return true;
             }
         }
-        Ok("konsole") => {
-            if is_konsole_version_gte(22, 4, 0) {
-                return true;
-            }
+        Ok("konsole") if is_konsole_version_gte(22, 4, 0) => {
+            return true;
         }
         _ => {}
     }
@@ -88,15 +86,15 @@ fn sixel_available() -> bool {
                 return true;
             }
         }
-        Ok("WindowsTerminal" | "Windows_Terminal") => {
+        Ok("WindowsTerminal" | "Windows_Terminal")
             if version_gte(
                 &env::var("TERM_PROGRAM_VERSION").unwrap_or_default(),
                 1,
                 22,
                 0,
-            ) {
-                return true;
-            }
+            ) =>
+        {
+            return true;
         }
         _ => {}
     }
@@ -107,12 +105,10 @@ fn sixel_available() -> bool {
     )
 }
 
-/// 鲁棒的版本号提取比较函数（只截取前缀连续数字）
 fn version_gte(version_str: &str, major: u32, minor: u32, patch: u32) -> bool {
     let parts: Vec<u32> = version_str
         .split('.')
         .map(|s| {
-            // 过滤非数字后缀，如从 "0-beta1" 中提取 "0"
             s.chars()
                 .take_while(|c| c.is_ascii_digit())
                 .collect::<String>()
@@ -127,19 +123,15 @@ fn version_gte(version_str: &str, major: u32, minor: u32, patch: u32) -> bool {
     (v_major, v_minor, v_patch) >= (major, minor, patch)
 }
 
-/// 专用于 WezTerm 版本号解析（格式通常为 YYYYMMDD-HHMMSS-hash）
 fn wezterm_sixel_supported(version: &str) -> bool {
-    // 提取连字符前的年月日数字，如 "20220624"
-    if let Some(date_part) = version.split('-').next() {
-        if let Ok(date_num) = date_part.parse::<u32>() {
-            // 2022年6月以后的版本支持 Sixel
-            return date_num >= 20220600;
-        }
+    if let Some(date_part) = version.split('-').next()
+        && let Ok(date_num) = date_part.parse::<u32>()
+    {
+        return date_num >= 20220600;
     }
     false
 }
 
-/// 兼顾纯数字（220400）与点分（22.04.0）格式的 Konsole 版本判断
 fn is_konsole_version_gte(major: u32, minor: u32, patch: u32) -> bool {
     let ver_str = env::var("KONSOLE_VERSION").unwrap_or_default();
     if ver_str.contains('.') {
