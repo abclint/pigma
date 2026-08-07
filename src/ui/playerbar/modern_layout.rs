@@ -55,7 +55,7 @@ pub fn draw(
 
     // Right bottom: singer + album + controls + volume + mode
     widgets::draw_song_detail(f, player, colors, layout.song_detail);
-    widgets::draw_controls(f, player, colors, layout.controls);
+    widgets::draw_controls(f, player, colors, layout.controls, false);
     if config.visible.volume && layout.volume.width > 0 {
         widgets::draw_volume(f, player, colors, layout.volume);
     }

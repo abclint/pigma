@@ -36,7 +36,7 @@ pub fn draw(
     let layout = build_layout::build_minimal(inner);
 
     draw_song_info_inline(f, player, colors, layout.song_info);
-    widgets::draw_controls(f, player, colors, layout.controls);
+    widgets::draw_controls(f, player, colors, layout.controls, true);
     widgets::draw_gauge_bar(f, player, colors, config, layout.gauge);
     widgets::draw_current_time(f, player, colors, layout.progress_time_left);
     widgets::draw_total_time(f, player, colors, layout.progress_time_right);

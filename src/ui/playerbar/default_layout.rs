@@ -36,7 +36,7 @@ pub fn draw(
     let layout = build_layout::build_default(inner);
 
     widgets::draw_song_info(f, player, colors, layout.song_info);
-    widgets::draw_controls(f, player, colors, layout.controls);
+    widgets::draw_controls(f, player, colors, layout.controls, true);
     widgets::draw_gauge_with_label(f, player, colors, config, layout.gauge);
 
     if config.visible.mode_icon {
