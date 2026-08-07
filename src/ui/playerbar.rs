@@ -2,7 +2,7 @@ mod build_layout;
 mod default_layout;
 mod minimal_layout;
 mod modern_layout;
-mod widgets;
+pub mod widgets;
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
