@@ -57,10 +57,7 @@ fn render_progress(f: &mut Frame, splash: &SplashState, colors: &Theme, area: Re
     for _ in 0..empty {
         line.push_span(Span::styled("▍", Style::default().fg(colors.surface)));
     }
-    f.render_widget(
-        Paragraph::new(line).alignment(Alignment::Center),
-        bar_area,
-    );
+    f.render_widget(Paragraph::new(line).alignment(Alignment::Center), bar_area);
 
     let percent = (splash.progress * 100.0) as u32;
     let status_line = Line::from(vec![Span::styled(

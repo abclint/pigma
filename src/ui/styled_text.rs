@@ -20,11 +20,7 @@ use crate::utils::gradient_color;
 /// tag always wins. Pass `Style::default()` to get the original behavior where
 /// unstyled text is rendered with no color and falls back to the terminal
 /// default foreground.
-pub fn parse_styled_with<'a>(
-    text: &'a str,
-    theme: &Theme,
-    base: Style,
-) -> Vec<Span<'a>> {
+pub fn parse_styled_with<'a>(text: &'a str, theme: &Theme, base: Style) -> Vec<Span<'a>> {
     let mut spans = Vec::new();
     let mut tag_stack: Vec<Style> = Vec::new();
     let mut current_style = base;
@@ -197,8 +193,11 @@ mod tests {
     #[test]
     fn explicit_tag_wins_over_base_color() {
         let theme = Theme::default();
-        let spans =
-            parse_styled_with("<accent>x</accent>", &theme, Style::default().fg(Color::Yellow));
+        let spans = parse_styled_with(
+            "<accent>x</accent>",
+            &theme,
+            Style::default().fg(Color::Yellow),
+        );
         assert_eq!(spans.len(), 1);
         assert_eq!(spans[0].style.fg, Some(theme.accent));
     }

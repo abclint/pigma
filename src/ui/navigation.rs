@@ -198,7 +198,8 @@ mod tests {
     fn unselected_item_tag_wins_over_muted_default() {
         let theme = Theme::default();
         let muted_style = Style::default().fg(theme.muted);
-        let name_spans = styled_text::parse_styled_with("<accent>歌单</accent>", &theme, Style::default());
+        let name_spans =
+            styled_text::parse_styled_with("<accent>歌单</accent>", &theme, Style::default());
         // unselected items use patch() so an explicit color tag survives
         let fg = muted_style.patch(name_spans[0].style).fg;
         assert_eq!(fg, Some(theme.accent));
