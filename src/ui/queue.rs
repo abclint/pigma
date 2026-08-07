@@ -41,9 +41,9 @@ pub fn draw_queue_table(
     let count = playback.queue_len();
     let key = playback.queue_key();
     let title = if key.is_empty() {
-        render_title(title_template, "", count)
+        render_title(title_template, "", count, 0)
     } else {
-        render_title(title_template, key, count)
+        render_title(title_template, key, count, 0)
     };
     let block = create_block(&title, bs, false);
     let inner = block.inner(area);

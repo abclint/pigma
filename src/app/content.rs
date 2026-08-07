@@ -23,10 +23,8 @@ impl App {
         let generation = self.state.navigation.generation;
 
         tokio::spawn(async move {
-            if let Some((content, pagination)) =
-                service.load_more_cloud_disk(offset, pg.limit, pg.api).await
-            {
-                send_event(
+            match service.load_more(&pg.api, offset, pg.limit).await {
+                Some((content, pagination)) => send_event(
                     &sender,
                     NavigationEvent::ContentLoadedPaged {
                         content,
@@ -34,7 +32,10 @@ impl App {
                         generation,
                     }
                     .into(),
-                );
+                ),
+                // Release the in-flight flag, otherwise pagination stays stuck
+                // after a single transient failure.
+                None => send_event(&sender, NavigationEvent::LoadMoreFailed.into()),
             }
         });
     }
@@ -55,6 +56,7 @@ impl App {
 
         let mut content = content;
 
+        // 仅歌曲列表（云盘、歌单内歌曲）支持分页追加；其余类型整体替换。
         if same_api
             && let ContentState::Songs(new_songs) = &mut content
             && let ContentState::Songs(existing) =
@@ -62,15 +64,15 @@ impl App {
         {
             existing.extend(std::mem::take(new_songs));
             let api_str = pagination.api.clone();
+            let pg_for_save = pagination.clone();
             self.state.navigation.pagination = Some(pagination);
-            *self.state.navigation.content_rows_cache.borrow_mut() = None;
 
             let ttl = self.config.cache.content_cache_ttl;
             if ttl > 0 && !api_str.is_empty() {
                 let cache = self.service.cache().clone();
                 let content_arc = Arc::clone(&self.state.navigation.content);
                 tokio::task::spawn_blocking(move || {
-                    cache.save_content_cache(&api_str, &content_arc);
+                    cache.save_content_cache(&api_str, &content_arc, Some(&pg_for_save));
                 });
             }
             return;
@@ -106,16 +108,34 @@ impl App {
 
         let service = self.service.clone();
         let sender = self.state.events.sender();
+        let limit = self.config.search_limit;
         tokio::spawn(async move {
-            let (state, detail_name) = if is_album {
-                (service.load_album(id).await, None)
+            if is_album {
+                let state = service.load_album(id).await;
+                send_event(&sender, NavigationEvent::ContentLoaded(state).into());
+                if let Some(n) = name.clone() {
+                    send_event(&sender, NavigationEvent::BreadcrumbSet(n).into());
+                }
+                return;
+            }
+            let (state, detail_name, pagination) =
+                service.load_playlist_detail(id, is_radio, limit).await;
+            if let Some(pg) = pagination {
+                send_event(
+                    &sender,
+                    NavigationEvent::ContentLoadedPaged {
+                        content: state,
+                        pagination: pg,
+                        generation: 0,
+                    }
+                    .into(),
+                );
             } else {
-                service.load_playlist_detail(id, is_radio).await
-            };
-            send_event(&sender, NavigationEvent::ContentLoaded(state).into());
+                send_event(&sender, NavigationEvent::ContentLoaded(state).into());
+            }
             let breadcrumb = detail_name.or(name);
-            if let Some(name) = breadcrumb {
-                send_event(&sender, NavigationEvent::BreadcrumbSet(name).into());
+            if let Some(n) = breadcrumb {
+                send_event(&sender, NavigationEvent::BreadcrumbSet(n).into());
             }
         });
     }
