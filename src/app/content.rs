@@ -154,9 +154,7 @@ impl App {
         };
         if let Some((pos, name)) = name {
             if let ContentState::Songs(songs) = self.state.navigation.content.as_ref() {
-                if self.state.navigation.content_is_search
-                    && crate::utils::sonar::is_sonar_song_id(id)
-                {
+                if self.state.navigation.content_is_search && sonar::is_sonar_song_id(id) {
                     // 第三方搜索统一进同一个队列，不复用按关键词/日期建的队列
                     self.playback.append_and_play_key(
                         crate::playback::THIRD_PARTY_QUEUE_KEY,
@@ -191,7 +189,7 @@ impl App {
             self.toast(format!("▶  {}", song.name));
             let song_id = song.id;
 
-            if crate::utils::sonar::is_sonar_song_id(song_id) {
+            if sonar::is_sonar_song_id(song_id) {
                 let finder = self.finder.clone();
                 let registry = self.sonar_songs.clone();
                 let cache = self.service.cache().clone();
@@ -277,7 +275,7 @@ impl App {
 
             // Load cover image
             let song_id = song.id;
-            let is_sonar = crate::utils::sonar::is_sonar_song_id(song_id);
+            let is_sonar = sonar::is_sonar_song_id(song_id);
             let own_pic = song.pic_url.clone();
             let cover = self.playback.state.cover.clone();
             let picker = self.picker.clone();
