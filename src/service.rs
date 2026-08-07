@@ -216,7 +216,11 @@ impl ApiService {
                         total,
                         loading: false,
                     };
-                    (ContentState::Songs(songs), Some(detail.name), Some(pagination))
+                    (
+                        ContentState::Songs(songs),
+                        Some(detail.name),
+                        Some(pagination),
+                    )
                 }
                 Err(e) => (ContentState::Error(e.to_string()), None, None),
             }
@@ -330,14 +334,14 @@ impl ApiService {
             let has_more = end < track_ids.len();
             return Some((
                 ContentState::Songs(songs),
-                    PaginationInfo {
-                        api: api.to_string(),
-                        offset,
-                        limit,
-                        has_more,
-                        total,
-                        loading: false,
-                    },
+                PaginationInfo {
+                    api: api.to_string(),
+                    offset,
+                    limit,
+                    has_more,
+                    total,
+                    loading: false,
+                },
             ));
         }
 

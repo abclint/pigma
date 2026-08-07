@@ -411,12 +411,16 @@ impl App {
 
         match crate::utils::terminal::best_image_protocol() {
             Some(crate::utils::terminal::ImageProtocol::Kitty) => {
+                log::debug!("ImageProtocol::Kitty");
                 picker.set_protocol_type(ratatui_image::picker::ProtocolType::Kitty);
             }
             Some(crate::utils::terminal::ImageProtocol::Sixel) => {
                 picker.set_protocol_type(ratatui_image::picker::ProtocolType::Sixel);
+                log::debug!("ImageProtocol::Sixel");
             }
-            None => {}
+            None => {
+                log::debug!("ImageProtocol::None");
+            }
         }
 
         let stream_client = {

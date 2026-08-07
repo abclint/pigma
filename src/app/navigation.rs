@@ -35,8 +35,7 @@ impl App {
 
             tokio::spawn(async move {
                 if ttl > 0
-                    && let Some((cached, _)) =
-                        cache.load_content_cache_async(&api_str, ttl).await
+                    && let Some((cached, _)) = cache.load_content_cache_async(&api_str, ttl).await
                 {
                     send_event(&sender, NavigationEvent::ContentLoaded(cached).into());
                     return;

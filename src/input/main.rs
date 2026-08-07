@@ -12,7 +12,6 @@ use super::navigation::{navigate_nav_down, navigate_nav_up};
 use super::table::{cell_select_next_column, cell_select_prev_column, toggle_table_mode};
 
 pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre::Result<()> {
-    // Ctrl+C and Ctrl+P are handled globally in input.rs
     match key_event.code {
         KeyCode::Esc => {
             app.state.events.send(NavigationEvent::ContentRestore);
@@ -201,10 +200,7 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
             }
         }
         KeyCode::Char('r' | 'R') => {
-            if matches!(
-                app.state.navigation.page,
-                Page::Main | Page::Lyrics
-            ) {
+            if matches!(app.state.navigation.page, Page::Main | Page::Lyrics) {
                 app.reload_current_nav();
             }
         }

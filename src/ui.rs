@@ -197,10 +197,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                                 .unwrap_or(count);
                             // 内容是分页加载（总数已知）时，像音乐云盘那样显示 `count/total`；
                             // 非分页内容只显示已加载数。各导航项也可用 `title_template` 覆盖。
-                            let show_total = nst
-                                .pagination
-                                .as_ref()
-                                .is_some_and(|p| p.total > 0);
+                            let show_total = nst.pagination.as_ref().is_some_and(|p| p.total > 0);
                             let template = current_item
                                 .and_then(|item| item.title_template.as_deref())
                                 .unwrap_or(if show_total {
