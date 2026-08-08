@@ -9,6 +9,8 @@ use tokio::sync::mpsc;
 
 use crate::event::{Event, PlaybackEvent};
 
+use super::mem_rss_kb;
+
 pub trait AudioReader: Read + Seek + Send + Sync {}
 impl<T: Read + Seek + Send + Sync> AudioReader for T {}
 
@@ -140,10 +142,7 @@ pub fn run(
                         total_duration = None;
                         seek_offset = Duration::default();
                         #[cfg(target_os = "linux")]
-                        log::info!(
-                            "[HEAP] after ControlCmd::Stop: {} kB",
-                            crate::playback::mem_rss_kb()
-                        );
+                        log::info!("[HEAP] after ControlCmd::Stop: {} kB", mem_rss_kb());
                     }
                     ControlCmd::Pause => {
                         if let Some(ref p) = player {
@@ -171,7 +170,7 @@ pub fn run(
                     #[cfg(target_os = "linux")]
                     log::info!(
                         "[HEAP] song finished (playback complete): {} kB",
-                        crate::playback::mem_rss_kb()
+                        mem_rss_kb()
                     );
                     let _ = event_tx.send(PlaybackEvent::Finished.into());
                     p.stop();
@@ -179,10 +178,7 @@ pub fn run(
                     total_duration = None;
                     seek_offset = Duration::default();
                     #[cfg(target_os = "linux")]
-                    log::info!(
-                        "[HEAP] after player drop on finish: {} kB",
-                        crate::playback::mem_rss_kb()
-                    );
+                    log::info!("[HEAP] after player drop on finish: {} kB", mem_rss_kb());
                     continue;
                 }
 
