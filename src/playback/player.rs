@@ -3,13 +3,15 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use rodio::Source;
-use rodio::cpal::traits::{DeviceTrait, HostTrait};
 use rodio::mixer::Mixer;
 use tokio::sync::mpsc;
 
-use crate::event::{Event, PlaybackEvent};
+#[cfg(target_os = "linux")]
+use super::engine::mem_rss_kb;
+#[cfg(target_os = "linux")]
+use rodio::cpal::traits::{DeviceTrait, HostTrait};
 
-use super::mem_rss_kb;
+use crate::event::{Event, PlaybackEvent};
 
 pub trait AudioReader: Read + Seek + Send + Sync {}
 impl<T: Read + Seek + Send + Sync> AudioReader for T {}

@@ -654,6 +654,7 @@ impl PlaybackEngine {
             log::error!("Failed to send PlaybackStarted: receiver dropped");
         }
 
+        #[cfg(target_os = "linux")]
         let song_id = song.id;
         tokio::spawn(async move {
             #[cfg(target_os = "linux")]
