@@ -20,7 +20,7 @@ use super::storage::PlaylistStorage;
 
 /// Read the current RSS in KB from /proc/self/status.
 #[cfg(target_os = "linux")]
-pub fn mem_rss_kb() -> u64 {
+pub(super) fn mem_rss_kb() -> u64 {
     std::fs::read_to_string("/proc/self/status")
         .ok()
         .and_then(|s| {
@@ -192,7 +192,7 @@ impl PlaybackEngine {
     /// only ever grows: a queue's file is written asynchronously
     /// (`spawn_blocking`), so a key seen once (or still being persisted) must
     /// not vanish from the cache on a later synchronous scan.
-    pub fn refresh_queue_keys(&mut self) {
+    fn refresh_queue_keys(&mut self) {
         let mut entries = self.queue_entries_cache.clone();
         for (id, display) in self.storage.list_queues() {
             if !entries.iter().any(|(i, _)| i == &id) {
@@ -475,7 +475,7 @@ impl PlaybackEngine {
         self.state.paused = !self.state.paused;
     }
 
-    pub fn stop(&mut self) {
+    fn stop(&mut self) {
         self.controller.stop();
         self.queue.current_index = None;
         self.state.playing = false;
@@ -565,13 +565,13 @@ impl PlaybackEngine {
         next
     }
 
-    pub fn set_mode(&mut self, mode: PlayMode) {
+    pub(super) fn set_mode(&mut self, mode: PlayMode) {
         self.state.mode = mode;
         self.strategy =
             mode::create_strategy(&self.state.mode, self.queue.len(), self.queue.current_index);
     }
 
-    pub fn handle_finished(&mut self) {
+    fn handle_finished(&mut self) {
         let should_advance = self.state.on_finished();
         if should_advance {
             self.next();

@@ -32,12 +32,12 @@ pub struct AudioSource {
     event_tx: mpsc::UnboundedSender<Event>,
     /// Original sonar songs for search results, keyed by the synthetic
     /// `SongInfo` id so playback can resolve the source via the same provider.
-    pub(crate) sonar_songs: Arc<Mutex<HashMap<u64, Arc<Song>>>>,
+    pub(super) sonar_songs: Arc<Mutex<HashMap<u64, Arc<Song>>>>,
 }
 
 impl AudioSource {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub(super) fn new(
         service: ApiService,
         cache: CacheManager,
         quality: SongQuality,
@@ -62,7 +62,7 @@ impl AudioSource {
     }
 
     /// 运行时切换边听边存：true 时流式播放并把文件写入下载缓存，false 时只流到临时文件。
-    pub fn set_save_on_play(&mut self, enabled: bool) {
+    pub(super) fn set_save_on_play(&mut self, enabled: bool) {
         self.save_on_play = enabled;
     }
 
@@ -286,7 +286,7 @@ impl AudioSource {
         Some(SharedReader(Arc::new(Mutex::new(Box::new(file)))))
     }
 
-    pub async fn resolve(&self, song: &SongInfo) -> Result<AudioInput, String> {
+    pub(super) async fn resolve(&self, song: &SongInfo) -> Result<AudioInput, String> {
         // 1. Cache wins for every source.
         if let Some(input) = self.resolve_cached(song).await {
             return Ok(input);

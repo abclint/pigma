@@ -1,8 +1,8 @@
-pub(crate) mod content;
-pub(crate) mod login;
-pub(crate) mod navigation;
-pub(crate) mod search;
-pub(crate) mod splash;
+mod content;
+mod login;
+mod navigation;
+mod search;
+mod splash;
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -36,7 +36,7 @@ use crate::ui;
 use crate::utils::pigma_cache_dir;
 use crate::utils::terminal::{ImageProtocol, best_image_protocol};
 
-pub(crate) use splash::send_event;
+use splash::send_event;
 
 /// Main application state and entry point for the pigma TUI.
 pub struct App {
@@ -345,7 +345,7 @@ impl App {
     /// Breadcrumb key for the current page: the last breadcrumb level's
     /// subtitle, falling back to the focused nav item's name. Distinct pages
     /// get distinct playback queues.
-    pub fn current_queue_key(&self) -> String {
+    pub(super) fn current_queue_key(&self) -> String {
         let nav = &self.state.navigation;
         if let Some(sub) = nav.nav.subtitle.clone().filter(|s| !s.trim().is_empty()) {
             return sub;
@@ -417,7 +417,7 @@ impl App {
         self.state.navigation.content_selected = 0;
     }
 
-    pub(crate) fn navigate_to_main(&mut self) {
+    fn navigate_to_main(&mut self) {
         self.state.navigation.page = Page::Main;
 
         let api = self

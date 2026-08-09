@@ -13,19 +13,19 @@ pub struct Skeleton {
 }
 
 impl Skeleton {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             bg: Color::Reset,
             surface: Color::Reset,
         }
     }
 
-    pub fn bg(mut self, color: Color) -> Self {
+    pub(super) fn bg(mut self, color: Color) -> Self {
         self.bg = color;
         self
     }
 
-    pub fn surface(mut self, color: Color) -> Self {
+    pub(super) fn surface(mut self, color: Color) -> Self {
         self.surface = color;
         self
     }

@@ -125,7 +125,7 @@ fn build_content_rows<'a>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn render_content(
+pub(super) fn render_content(
     f: &mut Frame,
     content: &ContentState,
     columns: &ColumnsConfig,

@@ -41,7 +41,7 @@ fn find_current_line(lyrics: &[LyricLine], cur_ms: f64) -> usize {
     })
 }
 
-pub fn draw(
+pub(super) fn draw(
     f: &mut Frame,
     player: &PlaybackState,
     bs: &BlockStyle<'_>,

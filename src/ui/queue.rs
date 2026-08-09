@@ -31,7 +31,7 @@ fn tab_style(colors: &Theme, selected: bool, playing: bool) -> Style {
         .add_modifier(Modifier::BOLD)
 }
 
-pub fn draw_queue_table(
+pub(super) fn draw_queue_table(
     f: &mut Frame,
     playback: &PlaybackEngine,
     selected: usize,

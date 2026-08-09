@@ -10,7 +10,7 @@ use super::BlockStyle;
 use crate::state::{CommandAction, CommandItem};
 use crate::{app::App, ui::block::create_block_surfaced};
 
-pub fn draw(f: &mut Frame, app: &App, area: Rect) {
+pub(super) fn draw(f: &mut Frame, app: &App, area: Rect) {
     let panel = &app.state.command_panel;
     let colors = app.current_theme();
     let Some(items) = panel.current_items() else {

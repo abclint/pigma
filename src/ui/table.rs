@@ -11,7 +11,7 @@ use crate::config::Theme;
 use crate::state::TableMode;
 use crate::{config::ColumnDef, ui::scrollbar::render_scrollbar};
 
-pub fn render_table(
+pub(super) fn render_table(
     f: &mut Frame,
     headers: &[ColumnDef],
     rows: Vec<Row<'_>>,
