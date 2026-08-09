@@ -3,7 +3,7 @@ use ratatui::layout::{Constraint, Flex, Layout, Rect};
 
 use crate::config::PlayerbarConfig;
 use crate::config::Theme;
-use crate::state::PlaybackState;
+use crate::playback::PlaybackState;
 
 use super::LayoutArea;
 use super::Playerbar;

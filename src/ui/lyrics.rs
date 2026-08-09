@@ -10,7 +10,7 @@ use super::BlockStyle;
 use super::create_block;
 use crate::config::Theme;
 use crate::playback::LyricLine;
-use crate::state::PlaybackState;
+use crate::playback::PlaybackState;
 use crate::utils::GradientPreset;
 
 thread_local! {

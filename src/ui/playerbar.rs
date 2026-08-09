@@ -11,7 +11,7 @@ use ratatui::widgets::{Padding, Paragraph};
 use crate::config::LayoutType;
 use crate::config::PlayerbarConfig;
 use crate::config::Theme;
-use crate::state::PlaybackState;
+use crate::playback::PlaybackState;
 
 use super::BlockStyle;
 use super::create_block;

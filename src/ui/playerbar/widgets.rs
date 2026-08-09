@@ -8,7 +8,7 @@ use ratatui::{
 use ratatui_image::{Resize, StatefulImage};
 
 use crate::config::Theme;
-use crate::state::PlaybackState;
+use crate::playback::PlaybackState;
 use crate::ui::gradient_line_gauge::GradientLineGauge;
 use crate::ui::spinner::Spinner;
 use crate::utils::format_duration_into;

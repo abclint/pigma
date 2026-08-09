@@ -16,7 +16,13 @@ use crate::{
     },
 };
 
-pub(super) fn draw(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, title: &str, area: Rect) {
+pub(super) fn draw(
+    f: &mut Frame,
+    nav: &mut NavState,
+    bs: &BlockStyle<'_>,
+    title: &str,
+    area: Rect,
+) {
     let colors = bs.colors;
     let muted_style = Style::default().fg(colors.muted);
     let block = create_block(title, bs, false);
