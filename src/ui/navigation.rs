@@ -195,8 +195,8 @@ pub fn keep_visible(
 #[cfg(test)]
 mod tests {
     use super::keep_visible;
+    use super::styled_text;
     use crate::config::Theme;
-    use crate::ui::styled_text;
     use ratatui::style::Style;
 
     #[test]
