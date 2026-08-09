@@ -522,10 +522,10 @@ impl App {
                 self.queued_playlists.remove(&id);
                 self.playback.set_playlist_id(id);
             }
-            PlaybackEvent::LikeSong(id) => {
+            PlaybackEvent::LikeSong(id, like) => {
                 let service = self.service.clone();
                 tokio::spawn(async move {
-                    let _ = service.like_song(id, true).await;
+                    let _ = service.like_song(id, like).await;
                 });
             }
             PlaybackEvent::DislikeSong(id) => {

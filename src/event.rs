@@ -62,7 +62,7 @@ pub enum PlaybackEvent {
     HeartbeatSong(SongInfo),
     HeartbeatFallback,
     SetPlaylistId(u64),
-    LikeSong(u64),
+    LikeSong(u64, bool),
     DislikeSong(u64),
     Cached(u64),
     /// Append lazily-paged songs to the queue identified by `key` (background
