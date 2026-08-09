@@ -55,6 +55,18 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
             } if n == &app.config.default_theme => {
                 format!("{} *", name)
             }
+            CommandItem::Action {
+                name,
+                action: CommandAction::ToggleSaveOnPlay,
+                ..
+            } => {
+                let state = if app.config.cache.save_on_play {
+                    "ON"
+                } else {
+                    "OFF"
+                };
+                format!("{name}: {state}")
+            }
             CommandItem::Action { name, .. } | CommandItem::SubMenu { name, .. } => name.clone(),
         };
 

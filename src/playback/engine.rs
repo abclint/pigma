@@ -80,6 +80,7 @@ impl PlaybackEngine {
         cache: CacheManager,
         base_dir: std::path::PathBuf,
         quality: SongQuality,
+        save_on_play: bool,
         stream_client: reqwest::Client,
         finder: Arc<sonar::SonarFinder>,
         sonar_enabled: bool,
@@ -100,6 +101,7 @@ impl PlaybackEngine {
                 service.clone(),
                 cache,
                 quality,
+                save_on_play,
                 stream_client,
                 finder,
                 sonar_enabled,
@@ -328,6 +330,42 @@ impl PlaybackEngine {
         self.strategy =
             mode::create_strategy(&self.state.mode, self.queue.len(), self.queue.current_index);
         self.start_current_song(None);
+    }
+
+    /// The dated queue key `context` maps to (same derivation as `play_songs`),
+    /// so background tasks can address the exact queue being played.
+    pub fn queue_key_for(&self, context: &str) -> String {
+        self.dated_key(context)
+    }
+
+    /// Append `songs` to the queue identified by `key` without interrupting
+    /// playback. Used by lazy pagination: after `play_songs` seeds the queue
+    /// with the first page, background pages are appended here. If `key` is not
+    /// the active queue (the user switched elsewhere mid-load), the target
+    /// queue is loaded, appended, persisted, then the previous one restored.
+    /// Duplicate ids are skipped.
+    pub fn append_songs_to_key(&mut self, key: &str, songs: Vec<SongInfo>) -> bool {
+        if songs.is_empty() {
+            return false;
+        }
+        let id = PlaylistStorage::queue_id(key);
+        if self.active_queue_id == id {
+            self.queue.append(&songs);
+            self.strategy =
+                mode::create_strategy(&self.state.mode, self.queue.len(), self.queue.current_index);
+            return true;
+        }
+        let prev = (self.active_queue_id.clone(), self.active_queue_key.clone());
+        self.persist_active_queue();
+        self.activate_by_id(key, &id);
+        self.queue.append(&songs);
+        self.strategy =
+            mode::create_strategy(&self.state.mode, self.queue.len(), self.queue.current_index);
+        self.persist_active_queue();
+        if !prev.0.is_empty() {
+            self.activate_by_id(&prev.1, &prev.0);
+        }
+        true
     }
 
     /// Append `songs` to a fixed, non-dated queue key and start playing
@@ -593,6 +631,11 @@ impl PlaybackEngine {
         self.persist_active_queue_blocking();
         self.source.cache.cleanup_index();
         self.source.cache.flush_index();
+    }
+
+    /// 运行时切换边听边存：下次解析音源时生效。
+    pub fn set_save_on_play(&mut self, enabled: bool) {
+        self.source.set_save_on_play(enabled);
     }
 
     fn restore_session(&mut self) {
