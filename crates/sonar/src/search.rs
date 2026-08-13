@@ -7,6 +7,9 @@ use crate::provider::{
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
+use once_cell::sync::Lazy;
+use regex::Regex;
+
 /// How [`SonarFinder`] ranks the combined results from all providers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SearchMode {
@@ -23,6 +26,51 @@ const ARTIST_HIT_WEIGHT: f64 = 1.5;
 /// Duration-match bonus tiers, in milliseconds of difference from the target.
 /// A hit within 3s is worth more than a loose 30s match.
 const DURATION_MATCH_MS: [(u64, f64); 3] = [(3_000, 1.0), (10_000, 0.5), (30_000, 0.25)];
+
+/// Score deducted from candidates whose title marks them as a secondary
+/// version of the track — an instrumental/accompaniment (伴奏/纯音乐/卡拉OK) or
+/// a concert/live recording (演唱会/现场/live). Present so the original studio
+/// recording wins ties; these versions often share the exact same title tokens
+/// and duration as the real track, so a bare token score cannot tell them
+/// apart.
+const SECONDARY_VERSION_PENALTY: f64 = 1.5;
+
+/// Literal markers (already in lowercase) that flag a non-original version.
+const SECONDARY_VERSION_MARKERS: &[&str] = &[
+    "伴奏",
+    "纯音乐",
+    "无人声",
+    "无和声",
+    "karaoke",
+    "卡拉ok",
+    "ktv",
+    "instrumental",
+    "演唱会",
+    "现场",
+];
+
+/// A generic "instrument remake" pattern: a musical instrument followed by a
+/// version/piece suffix (钢琴版 / 吉他曲 / 小提琴独奏...), which almost always
+/// denotes an instrumental cover. `[板块]` tolerates the common typo.
+static INSTRUMENTAL_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r"(?:钢琴|电钢琴|电子琴|吉他|尤克里里|古筝|琵琶|二胡|小提琴|大提琴|笛子|长笛|陶笛|口琴|萨克斯)(?:版|板|曲|独奏|纯音乐)",
+    )
+    .expect("valid regex")
+});
+
+/// A "live" token at a word boundary in lowercase-normalized text (live, live
+/// at, live version...). Word boundaries avoid false hits on words that merely
+/// contain "live" (e.g. "alive").
+static LIVE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\blive\b").expect("valid regex"));
+
+/// Whether an already-normalized title/query carries a secondary-version marker
+/// (instrumental/accompaniment, concert or live recording).
+fn is_secondary_version(s: &str) -> bool {
+    SECONDARY_VERSION_MARKERS.iter().any(|m| s.contains(m))
+        || INSTRUMENTAL_RE.is_match(s)
+        || LIVE_RE.is_match(s)
+}
 
 /// Tunables for a [`SonarFinder`] search session.
 #[derive(Debug, Clone)]
@@ -288,6 +336,15 @@ impl SonarFinder {
             }
         }
 
+        // Demote secondary versions (instrumentals/accompaniments, concert and
+        // live recordings) so the original studio recording wins when both
+        // surface in the results. Skipped when the search itself asks for such
+        // a version (the query carries the marker).
+        let query_text = crate::util::normalize_for_match(&query.keyword);
+        if !is_secondary_version(&query_text) && is_secondary_version(&name) {
+            score -= SECONDARY_VERSION_PENALTY;
+        }
+
         score
     }
 
@@ -438,4 +495,105 @@ pub async fn quick_search_with_mode(
     finder
         .search_and_get_url(&SearchQuery::new(keyword), None)
         .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::make_song_id;
+
+    fn song(name: &str, singer: &str) -> Song {
+        Song {
+            id: make_song_id(SonarSource::Kugou, name),
+            source_id: name.to_string(),
+            name: name.to_string(),
+            singer: singer.to_string(),
+            album: String::new(),
+            duration: 0,
+            source: SonarSource::Kugou,
+            pic_url: String::new(),
+            meta: Default::default(),
+        }
+    }
+
+    fn score(name: &str, singer: &str, keyword: &str) -> f64 {
+        let finder = SonarFinder::new(SearchConfig::default()).unwrap();
+        finder.calculate_match_score(&song(name, singer), &SearchQuery::new(keyword))
+    }
+
+    #[test]
+    fn vocal_beats_instrumental() {
+        let vocal = score("晴天", "周杰伦", "晴天 周杰伦");
+        let instrumental = score("晴天 伴奏", "周杰伦", "晴天 周杰伦");
+        assert!(
+            vocal > instrumental,
+            "vocal {vocal} should outscore 伴奏 {instrumental}"
+        );
+    }
+
+    #[test]
+    fn instrumental_query_not_penalised() {
+        // When the user explicitly searches for an instrumental, its token hits
+        // should count normally instead of being penalised.
+        let q = "晴天 伴奏";
+        let vocal = score("晴天", "周杰伦", q);
+        let instrumental = score("晴天 伴奏", "周杰伦", q);
+        assert!(
+            instrumental > vocal,
+            "explicit 伴奏 query should rank it first"
+        );
+    }
+
+    #[test]
+    fn piano_remake_is_penalised() {
+        let vocal = score("晴天", "周杰伦", "晴天 周杰伦");
+        let remake = score("晴天 钢琴版", "周杰伦", "晴天 周杰伦");
+        assert!(
+            vocal > remake,
+            "vocal {vocal} should outscore 钢琴版 {remake}"
+        );
+    }
+
+    #[test]
+    fn concert_and_live_are_penalised() {
+        let vocal = score("晴天", "周杰伦", "晴天 周杰伦");
+        for title in [
+            "晴天 演唱会",
+            "晴天(现场版)",
+            "晴天 live",
+            "晴天 live at 演唱会",
+        ] {
+            let version = score(title, "周杰伦", "晴天 周杰伦");
+            assert!(
+                vocal > version,
+                "vocal {vocal} should outscore {title:?} ({version})"
+            );
+        }
+    }
+
+    #[test]
+    fn concert_query_not_penalised() {
+        let q = "晴天 演唱会";
+        let vocal = score("晴天", "周杰伦", q);
+        let concert = score("晴天 演唱会", "周杰伦", q);
+        assert!(
+            concert > vocal,
+            "explicit 演唱会 query should rank the live version first"
+        );
+    }
+
+    #[test]
+    fn secondary_version_markers_recognised() {
+        assert!(is_secondary_version("晴天 (karaoke)"));
+        assert!(is_secondary_version("晴天 ktv"));
+        assert!(is_secondary_version("晴天 纯音乐"));
+        assert!(is_secondary_version("晴天 演唱会"));
+        assert!(is_secondary_version("晴天 现场版"));
+        assert!(is_secondary_version("晴天 live"));
+        assert!(!is_secondary_version("晴天"));
+        assert!(
+            !is_secondary_version("alive"),
+            "word boundary must guard live"
+        );
+    }
 }

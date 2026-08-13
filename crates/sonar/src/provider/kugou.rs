@@ -25,7 +25,10 @@ impl KugouProvider {
 
     /// Build a provider, routing requests through `proxy_url` (empty = direct).
     pub fn with_proxy(enable_flac: bool, proxy_url: &str) -> Result<Self> {
-        let client = build_client(proxy_url, "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36")?;
+        let client = build_client(
+            proxy_url,
+            "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36",
+        )?;
         Ok(Self {
             client,
             enable_flac,
