@@ -11,6 +11,7 @@ use futures::{FutureExt, StreamExt};
 use ncm_api::{LoginInfo, SongInfo};
 use tokio::sync::mpsc;
 
+use crate::ipc::IpcEvent;
 use crate::playback::LyricLine;
 use crate::state::{ContentState, Page, PaginationInfo, SplashLogEntry};
 
@@ -29,6 +30,8 @@ pub enum AppEvent {
     Navigation(NavigationEvent),
     Command(CommandEvent),
     Toast(String),
+    /// Control request received over the IPC socket (`pigma msg`).
+    Ipc(IpcEvent),
 }
 
 #[derive(Clone, Debug)]

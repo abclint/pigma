@@ -48,6 +48,7 @@ impl App {
                 AppEvent::Navigation(e) => self.handle_navigation_event(e),
                 AppEvent::Command(e) => self.handle_command_event(e),
                 AppEvent::Toast(msg) => self.toast(msg),
+                AppEvent::Ipc(e) => self.handle_ipc_event(e),
             },
         }
         Ok(())
