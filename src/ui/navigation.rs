@@ -10,10 +10,7 @@ use unicode_width::UnicodeWidthStr;
 use super::BlockStyle;
 use crate::{
     state::NavState,
-    ui::{
-        block::CornerBlock,
-        styled_text,
-    },
+    ui::{block::CornerBlock, styled_text},
 };
 
 pub(super) fn draw(

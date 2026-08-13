@@ -68,6 +68,11 @@ pub(super) fn draw(
             }
             _ => {}
         }
+    } else {
+        right_line.push_span(Span::styled(
+            "未登录（按 L 登录）",
+            Style::default().fg(colors.muted),
+        ));
     }
 
     // right_line.push(Span::styled("v0.1.0", Style::default().fg(colors.muted)));

@@ -157,8 +157,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                             title
                         }
                     };
-                    let block = CornerBlock::from_color(&bs, bs.colors.bg)
-                        .title(&title, bs.colors);
+                    let block = CornerBlock::from_color(&bs, bs.colors.bg).title(&title, bs.colors);
                     let inner = block.inner(lay.content);
                     f.render_widget(block, lay.content);
 

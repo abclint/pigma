@@ -19,6 +19,9 @@ pub struct CornerBlock<'a> {
     border_gradient: Option<GradientPreset>,
     border_gradient_speed: f64,
     tick: u64,
+    no_border: bool,
+    has_title: bool,
+    horizontal_padding: u16,
 }
 
 impl<'a> CornerBlock<'a> {
@@ -35,6 +38,9 @@ impl<'a> CornerBlock<'a> {
             border_gradient: None,
             border_gradient_speed: 0.0,
             tick: 0,
+            no_border: false,
+            has_title: false,
+            horizontal_padding: 0,
         }
     }
 
@@ -72,11 +78,6 @@ impl<'a> CornerBlock<'a> {
         self
     }
 
-    pub(super) fn block_padding(mut self, padding: ratatui::widgets::Padding) -> Self {
-        self.block = self.block.padding(padding);
-        self
-    }
-
     pub(super) fn from_color(style: &'a BlockStyle<'a>, no_border_bg: Color) -> Self {
         let border_color = style.colors.border;
         let border_type = if style.border.rounded {
@@ -84,19 +85,28 @@ impl<'a> CornerBlock<'a> {
         } else {
             BorderType::Plain
         };
-        let block = if style.border.enabled {
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(border_type)
-                .border_style(Style::default().fg(border_color))
-                .title_style(Style::default().fg(style.colors.muted))
+        let (block, horizontal_padding, no_border) = if style.border.enabled {
+            (
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(border_type)
+                    .border_style(Style::default().fg(border_color))
+                    .title_style(Style::default().fg(style.colors.muted)),
+                0,
+                false,
+            )
         } else {
-            Block::default()
-                .borders(Borders::NONE)
-                .border_style(Style::default().fg(border_color))
-                .style(Style::default().bg(no_border_bg))
-                .title_style(Style::default().fg(style.colors.muted))
-                .padding(Padding::horizontal(1))
+            let padding = Padding::new(1, 1, 1, 0);
+            (
+                Block::default()
+                    .borders(Borders::NONE)
+                    .border_style(Style::default().fg(border_color))
+                    .style(Style::default().bg(no_border_bg))
+                    .title_style(Style::default().fg(style.colors.muted))
+                    .padding(padding),
+                1,
+                true,
+            )
         };
         Self::new(block)
             .corner_color(style.colors.accent)
@@ -105,6 +115,13 @@ impl<'a> CornerBlock<'a> {
             .border_gradient(style.border.border_gradient)
             .border_gradient_speed(style.border.border_gradient_speed)
             .tick(style.tick)
+            .set_borderless(horizontal_padding, no_border)
+    }
+
+    pub(super) fn set_borderless(mut self, horizontal_padding: u16, no_border: bool) -> Self {
+        self.horizontal_padding = horizontal_padding;
+        self.no_border = no_border;
+        self
     }
 
     pub(super) fn title(mut self, title: &'a str, colors: &'a Theme) -> Self {
@@ -113,6 +130,20 @@ impl<'a> CornerBlock<'a> {
             .block
             .title(title_line)
             .title_style(Style::default().fg(colors.muted));
+        if self.no_border {
+            let h = self.horizontal_padding;
+            self.block = self.block.padding(Padding::new(h, h, 0, 0));
+        }
+        self.has_title = true;
+        self
+    }
+
+    pub(super) fn block_padding(mut self, padding: ratatui::widgets::Padding) -> Self {
+        if self.no_border && !self.has_title && padding.top == 0 {
+            self.block = self.block.padding(Padding { top: 1, ..padding });
+        } else {
+            self.block = self.block.padding(padding);
+        }
         self
     }
 

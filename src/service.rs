@@ -95,6 +95,22 @@ impl ApiService {
         uid: Option<u64>,
         limit: u16,
     ) -> (ContentState, Option<PaginationInfo>) {
+        let requires_login = matches!(
+            api,
+            ApiEndpoint::RecommendSongs
+                | ApiEndpoint::RecommendResource
+                | ApiEndpoint::UserRadioSublist
+                | ApiEndpoint::UserCloudDisk
+                | ApiEndpoint::LikedSongs
+                | ApiEndpoint::UserSongList
+                | ApiEndpoint::UserCreatedSongList
+                | ApiEndpoint::UserSubscribedSongList
+                | ApiEndpoint::SavedAlbums
+                | ApiEndpoint::Recent
+        );
+        if requires_login && !self.client.is_logged_in() {
+            return (ContentState::Error("未登录".into()), None);
+        }
         match api {
             ApiEndpoint::RecommendSongs => {
                 content_result(self.client.recommend_songs().await, |songs| {
@@ -169,7 +185,8 @@ impl ApiService {
                 self.client.top_artists(0, limit).await,
                 ContentState::Singers,
             ),
-            ApiEndpoint::Download | ApiEndpoint::LocalMusic | ApiEndpoint::LikedSongs => {
+            ApiEndpoint::LikedSongs => (ContentState::Error("未登录".into()), None),
+            ApiEndpoint::Download | ApiEndpoint::LocalMusic => {
                 unreachable!("handled separately by caller")
             }
         }

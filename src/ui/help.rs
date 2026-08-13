@@ -13,6 +13,7 @@ use crate::app::App;
 const HELP_ITEMS: &[(&str, &str)] = &[
     ("Ctrl+C/q", "退出程序"),
     ("Ctrl+P", "命令面板"),
+    ("L", "登录网易云"),
     ("w", "清空播放队列"),
     ("?", "帮助"),
     ("Esc", "返回"),
@@ -23,6 +24,8 @@ const HELP_ITEMS: &[(&str, &str)] = &[
     ("Space", "播放 / 暂停"),
     ("n / p", "下一首 / 上一首"),
     ("← / →", "上一列 / 快退，下一列 / 快进"),
+    ("+ / -", "音量增大 / 减小"),
+    ("z", "切换导航栏位置"),
     ("m", "循环模式"),
     ("l", "歌词页 / 主界面"),
     ("f", "播放队列 / 主界面"),
@@ -56,8 +59,8 @@ pub(super) fn draw(f: &mut Frame, app: &App, area: Rect) {
         border: &app.state.border,
         tick: app.state.tick,
     };
-    let block = CornerBlock::from_color(&style, colors.surface)
-        .title("\u{25BA} HELP \u{25C4}", colors);
+    let block =
+        CornerBlock::from_color(&style, colors.surface).title("\u{25BA} HELP \u{25C4}", colors);
     let inner = block.inner(popup_area);
 
     f.render_widget(Clear, popup_area);

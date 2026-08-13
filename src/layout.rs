@@ -33,17 +33,22 @@ pub fn splash(area: Rect) -> SplashLayout {
 
 pub struct LoginLayout {
     pub status: Rect,
+    pub logo: Rect,
     pub login_box: Rect,
 }
 
 pub fn login(area: Rect) -> LoginLayout {
-    let [status_area, box_area] = Layout::vertical([Constraint::Length(1), Constraint::Min(26)])
+    let [status_area, body] = Layout::vertical([Constraint::Length(1), Constraint::Min(26)])
         .flex(Flex::Center)
         .spacing(1)
         .areas(area);
 
+    let [logo_area, box_area] =
+        Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)]).areas(body);
+
     LoginLayout {
         status: status_area,
+        logo: logo_area,
         login_box: box_area,
     }
 }

@@ -92,7 +92,7 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
                 app.playback.seek_relative(interval);
             }
         }
-        KeyCode::Char('l' | 'L') => {
+        KeyCode::Char('l') => {
             let next = match app.state.navigation.page {
                 Page::Main => Page::Lyrics,
                 Page::Lyrics => Page::Main,
@@ -230,6 +230,15 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
             app.state
                 .events
                 .send(NavigationEvent::UploadCachedSong(sel));
+        }
+        KeyCode::Char('+' | '=') => {
+            app.adjust_volume(0.05);
+        }
+        KeyCode::Char('-' | '_') => {
+            app.adjust_volume(-0.05);
+        }
+        KeyCode::Char('z' | 'Z') => {
+            app.cycle_nav_position();
         }
         _ => {}
     }

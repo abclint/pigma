@@ -58,6 +58,9 @@ pub struct Config {
     /// Navigation bar position: left (default), right, top, or bottom.
     #[serde(default)]
     pub navigation_position: NavPosition,
+    /// Minimum splash screen display time (seconds); auto-transition waits for this even if boot finishes instantly.
+    #[serde(default = "default_splash_duration")]
+    pub splash_duration_secs: f64,
     /// sonar fallback source config (multi-source fallback when NCM playback fails).
     #[serde(default)]
     pub source_fallback: SonarConfig,
@@ -93,8 +96,34 @@ pub enum NavPosition {
     Bottom,
 }
 
+impl NavPosition {
+    /// The next position in the left → right → top → bottom cycle.
+    pub fn cycle(self) -> Self {
+        match self {
+            NavPosition::Left => NavPosition::Right,
+            NavPosition::Right => NavPosition::Top,
+            NavPosition::Top => NavPosition::Bottom,
+            NavPosition::Bottom => NavPosition::Left,
+        }
+    }
+
+    /// Human-readable Chinese label used for toasts.
+    pub fn label(self) -> &'static str {
+        match self {
+            NavPosition::Left => "左侧",
+            NavPosition::Right => "右侧",
+            NavPosition::Top => "顶部",
+            NavPosition::Bottom => "底部",
+        }
+    }
+}
+
 fn default_search_limit() -> u16 {
     100
+}
+
+fn default_splash_duration() -> f64 {
+    2.0
 }
 
 /// Fallback source config (sonar multi-source fallback).
@@ -136,6 +165,7 @@ impl Default for Config {
             proxy_target: default_proxy_target(),
             search_limit: default_search_limit(),
             navigation_position: NavPosition::default(),
+            splash_duration_secs: default_splash_duration(),
             logger: Logger::default(),
             cache: CacheConfig::default(),
             playerbar: PlayerbarConfig::default(),

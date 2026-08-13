@@ -199,13 +199,35 @@ impl App {
         self.state.toast_time = Some(Instant::now());
     }
 
+    /// Adjust playback volume by `delta` (fraction of 0..=1), clamped to bounds
+    /// and surfaced as a toast. Keyboard `+`/`-` mirrors the playerbar scroll.
+    pub fn adjust_volume(&mut self, delta: f64) {
+        let new = (self.playback.state.volume + delta).clamp(0.0, 1.0);
+        self.playback.set_volume(new);
+        self.toast(format!("   {:.0}%", new * 100.0));
+    }
+
+    /// Cycle the navigation bar position (left → right → top → bottom) at
+    /// runtime and persist the new value so it survives restarts.
+    pub fn cycle_nav_position(&mut self) {
+        self.config.navigation_position = self.config.navigation_position.cycle();
+        self.config.save();
+        let pos = self.config.navigation_position;
+        self.toast(format!("◧ 导航栏位置: {}", pos.label()));
+    }
+
     pub async fn run(mut self, mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
         self.start_splash_boot();
         while self.state.running {
             terminal.draw(|frame| self.draw(frame))?;
             self.handle_events().await?;
 
-            if self.state.splash.boot_complete && self.state.navigation.page == Page::Splash {
+            let splash_ready = self.state.splash.shown_at.elapsed().as_secs_f64()
+                >= self.config.splash_duration_secs;
+            if self.state.splash.boot_complete
+                && splash_ready
+                && self.state.navigation.page == Page::Splash
+            {
                 if self.state.offline {
                     self.navigate_to_local();
                 } else if self.service.client().is_logged_in() {
@@ -225,7 +247,7 @@ impl App {
                         }
                     });
                 } else {
-                    self.state.navigation.page = Page::Login;
+                    self.navigate_to_main();
                 }
             }
         }

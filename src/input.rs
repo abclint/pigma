@@ -12,7 +12,7 @@ mod splash;
 mod table;
 
 use crate::app::App;
-use crate::event::{AppEvent, CommandEvent, CommandPanelAction};
+use crate::event::{AppEvent, CommandEvent, CommandPanelAction, NavigationEvent};
 use crate::state::Page;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEventKind};
 
@@ -59,6 +59,15 @@ pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> color_eyre::Resu
     }
 
     if app.state.navigation.search.active && search::handle_search_key(app, key_event) {
+        return Ok(());
+    }
+
+    // Uppercase L: go to the login page (lowercase `l` toggles lyrics on the main page).
+    // No-op when already logged in.
+    if key_event.code == KeyCode::Char('L') && !app.service.client().is_logged_in() {
+        app.state
+            .events
+            .send(NavigationEvent::Navigate(Page::Login));
         return Ok(());
     }
 

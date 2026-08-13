@@ -252,6 +252,7 @@ impl App {
                 self.config.save();
                 self.toast(format!("边听边存: {}", if enabled { "ON" } else { "OFF" }));
             }
+            CommandAction::CycleNavPosition => self.cycle_nav_position(),
             CommandAction::SwitchTheme(name) => {
                 let msg = format!("THEME: {name}");
                 self.config.default_theme = name;

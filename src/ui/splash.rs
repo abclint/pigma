@@ -11,7 +11,7 @@ use crate::config::Theme;
 use crate::layout::SplashLayout;
 use crate::state::{LogLevel, SplashState};
 
-const LOGO: &[&str] = &[
+pub(super) const LOGO: &[&str] = &[
     "█▀▀▀▄ ▀█▀ ▄▀▀▀▀ █▄ ▄█ ▄▀▀▀▄",
     "█▄▄▄▀  █  █ ▀▀█ █ ▀ █ █▄▄▄█",
     "█     ▄█▄ ▀▄▄▄▀ █   █ █   █",
@@ -135,12 +135,11 @@ fn render_tag(f: &mut Frame, colors: &Theme, area: Rect) {
     let line = Line::from(vec![
         Span::styled("NETEASE MUSIC TUI ", Style::default().fg(colors.muted)),
         Span::styled(
-            "v0.1.0",
+            "v0.2.8",
             Style::default()
                 .fg(colors.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled("  //  [ PRESS ANY KEY ]", Style::default().fg(colors.muted)),
     ]);
     f.render_widget(Paragraph::new(line).alignment(Alignment::Center), area);
 }

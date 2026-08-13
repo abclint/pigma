@@ -64,6 +64,10 @@ impl App {
                 name: "Toggle Save on Play".into(),
                 action: CommandAction::ToggleSaveOnPlay,
             },
+            CommandItem::Action {
+                name: "Cycle Nav Position".into(),
+                action: CommandAction::CycleNavPosition,
+            },
         ];
 
         let mut command_panel = CommandPanel::new();

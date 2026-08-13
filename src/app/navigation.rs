@@ -16,6 +16,10 @@ impl App {
         api_str: String,
         force: bool,
     ) -> color_eyre::Result<()> {
+        if api_str == "login" {
+            self.state.navigation.page = Page::Login;
+            return Ok(());
+        }
         let api = match ApiEndpoint::parse(&api_str) {
             Some(ep) => ep,
             None => {
@@ -370,15 +374,38 @@ impl App {
     pub(super) fn navigate_to_main(&mut self) {
         self.state.navigation.page = Page::Main;
 
+        // Browsable without a logged-in session (public endpoints).
+        const PUBLIC_APIS: &[&str] = &["top_song_list", "toplist", "top_singers", "search"];
+        let public_only = !self.service.client().is_logged_in();
+
         let api = self
             .state
             .navigation
             .nav
             .sections
-            .first()
-            .and_then(|s| s.items.first())
-            .and_then(|i| i.api.clone());
+            .iter()
+            .find_map(|s| {
+                s.items.iter().find_map(|i| {
+                    let api = i.api.as_deref()?;
+                    if public_only && !PUBLIC_APIS.contains(&api) {
+                        None
+                    } else {
+                        Some(api.to_string())
+                    }
+                })
+            })
+            .or_else(|| {
+                self.state
+                    .navigation
+                    .nav
+                    .sections
+                    .first()
+                    .and_then(|s| s.items.first())
+                    .and_then(|i| i.api.clone())
+            });
+
         if let Some(api) = api {
+            self.state.navigation.nav.restore_focus_by_api(&api);
             let sender = self.state.events.sender();
             send_event(&sender, NavigationEvent::NavSelect(api).into());
         }
