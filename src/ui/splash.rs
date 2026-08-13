@@ -135,7 +135,7 @@ fn render_tag(f: &mut Frame, colors: &Theme, area: Rect) {
     let line = Line::from(vec![
         Span::styled("NETEASE MUSIC TUI ", Style::default().fg(colors.muted)),
         Span::styled(
-            "v0.2.8",
+            env!("CARGO_PKG_VERSION"),
             Style::default()
                 .fg(colors.accent)
                 .add_modifier(Modifier::BOLD),
