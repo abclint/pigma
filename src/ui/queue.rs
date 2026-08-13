@@ -55,7 +55,7 @@ pub(super) fn draw_queue_table(
     let body = if playback.queue_keys().is_empty() {
         inner
     } else {
-        let keys = playback.queue_keys().to_vec();
+        let keys = playback.queue_keys();
         let selected_tab = keys.iter().position(|k| k == key);
         let playing_tab = keys.iter().position(|k| k == playback.playing_queue_key());
         let [tabs_area, body] =

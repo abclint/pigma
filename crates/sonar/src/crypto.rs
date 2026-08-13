@@ -10,6 +10,8 @@ const KUGOU_KEY_SUFFIX: &str = "kgcloudv2";
 const KUWO_DES_KEY: &[u8; 8] = b"ylzsxkwm";
 const KUWO_SOURCE: &str = "kwplayer_ar_5.1.0.0_B_jiakong_vh.apk";
 
+/// Kugou track-CDN API key: md5 of `{hash}kgcloudv2`. Required as the `key`
+/// query parameter when requesting a play URL from `trackercdn.kugou.com`.
 pub fn kugou_md5_key(hash: &str) -> String {
     let input = format!("{}{}", hash, KUGOU_KEY_SUFFIX);
     format!("{:x}", md5::compute(input))
@@ -169,6 +171,8 @@ fn kuwo_des64_bytes(subkeys: &[u64; 16], block: u64) -> [u8; 8] {
     bytes
 }
 
+/// Encrypt a query string with Kuwo's custom DES variant and return it
+/// base64-encoded, as expected by the Kuwo `convert_url2` endpoints.
 pub fn kuwo_des_encrypt(plaintext: &str) -> Result<String> {
     let msg = plaintext.as_bytes();
     let subkeys = kuwo_subkeys(kuwo_pack_bytes(KUWO_DES_KEY));
@@ -186,6 +190,8 @@ pub fn kuwo_des_encrypt(plaintext: &str) -> Result<String> {
     Ok(general_purpose::STANDARD.encode(output))
 }
 
+/// Build the Kuwo `convert_url2` query body for a given `rid` (song id) and
+/// `format` (e.g. `mp3`). The `source` is the Kuwo mobile package identifier.
 pub fn kuwo_build_query(rid: &str, format: &str) -> String {
     format!(
         "user=0&corp=kuwo&source={}&p2p=1&type=convert_url2&sig=0&format={}&rid=MUSIC_{}",
@@ -199,6 +205,8 @@ pub fn kuwo_build_query(rid: &str, format: &str) -> String {
 
 static WBI_KEYS: OnceLock<(String, String)> = OnceLock::new();
 
+/// Fetch and cache Bilibili WBI `img_key`/`sub_key` (cached process-wide via
+/// [`OnceLock`]). Required to sign requests with [`wbi_sign`].
 pub async fn get_wbi_keys() -> Result<(String, String)> {
     if let Some(keys) = WBI_KEYS.get() {
         return Ok(keys.clone());
@@ -253,6 +261,9 @@ fn get_mixin_key(orig: &str) -> String {
         .to_string()
 }
 
+/// Sign a Bilibili request: appends `wts`, sorts params, mixes in the cached
+/// WBI mixin key, and returns the full query string including the `w_rid` md5
+/// signature. Mutates `params` (adds `wts`).
 pub async fn wbi_sign(params: &mut Vec<(String, String)>) -> Result<String> {
     let (img_key, sub_key) = get_wbi_keys().await?;
     let mixin_key = get_mixin_key(&format!("{}{}", img_key, sub_key));

@@ -125,7 +125,7 @@ fn render_logs(f: &mut Frame, splash: &SplashState, colors: &Theme, area: Rect) 
             ),
             Span::styled(tag.to_string(), Style::default().fg(tag_color)),
             Span::raw(" "),
-            Span::styled(entry.text.clone(), Style::default().fg(colors.muted)),
+            Span::styled(entry.text.as_str(), Style::default().fg(colors.muted)),
         ]);
         f.render_widget(Paragraph::new(line), row_area);
     }

@@ -4,6 +4,7 @@ use crate::model::{
     PlayUrlResult, Quality, SearchQuery, SearchResult, SonarSource, Song, SongMeta, make_song_id,
 };
 use crate::provider::SonarProvider;
+use crate::provider::{PRIORITY_BILIVIDEO, build_client};
 use async_trait::async_trait;
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -21,6 +22,8 @@ fn clean_title(title: &str) -> String {
     HTML_TAG_RE.replace_all(title, "").into_owned()
 }
 
+/// Bilibili video provider. Searches via the WBI-signed web search API and
+/// extracts the audio track from the DASH manifest of a video.
 #[derive(Debug)]
 pub struct BiliVideoProvider {
     client: Client,
@@ -28,21 +31,21 @@ pub struct BiliVideoProvider {
 }
 
 impl BiliVideoProvider {
-    pub fn new() -> Self {
+    /// Build a provider with no proxy (cookies are fetched lazily on first search).
+    pub fn new() -> Result<Self> {
         Self::with_proxy("")
     }
 
-    pub fn with_proxy(proxy_url: &str) -> Self {
-        let mut builder = Client::builder()
-            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
-        if !proxy_url.is_empty() {
-            builder = builder.proxy(reqwest::Proxy::all(proxy_url).expect("invalid proxy url"));
-        }
-        let client = builder.build().expect("Failed to create HTTP client");
-        Self {
+    /// Build a provider, routing requests through `proxy_url` (empty = direct).
+    pub fn with_proxy(proxy_url: &str) -> Result<Self> {
+        let client = build_client(
+            proxy_url,
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        )?;
+        Ok(Self {
             client,
             cookies: Arc::new(Mutex::new(String::new())),
-        }
+        })
     }
 
     async fn fetch_cookies(&self) -> Result<()> {
@@ -93,7 +96,7 @@ impl BiliVideoProvider {
 
 impl Default for BiliVideoProvider {
     fn default() -> Self {
-        Self::new()
+        Self::new().expect("direct bilibili client")
     }
 }
 
@@ -123,8 +126,6 @@ impl SonarProvider for BiliVideoProvider {
                 ],
             )
             .await?;
-
-        // println!("{:?}", json);
 
         let results = json["data"]["result"]
             .as_array()
@@ -216,6 +217,6 @@ impl SonarProvider for BiliVideoProvider {
     }
 
     fn priority(&self) -> u8 {
-        40
+        PRIORITY_BILIVIDEO
     }
 }

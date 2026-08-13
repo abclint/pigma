@@ -1,3 +1,6 @@
+//! Main screen area layout: splits the frame into topbar, navigation, content and
+//! player-bar regions (plus the splash layout).
+
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
 
 use crate::config::NavPosition;
@@ -101,7 +104,7 @@ pub fn build_layout(area: Rect, page: Page, nav_position: NavPosition) -> Layout
                 ])
                 .areas(area);
 
-                // 终端<60 列时隐藏侧边栏，内容占满整个区域
+                // Hide the sidebar when the terminal is narrower than 60 columns; content fills the whole area
                 let (sidebar, right) = if area.width < 60 {
                     (Rect::default(), middle)
                 } else {

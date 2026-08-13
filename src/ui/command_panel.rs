@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use ratatui::{
     Frame,
     layout::{Constraint, Rect},
@@ -47,14 +49,12 @@ pub(super) fn draw(f: &mut Frame, app: &App, area: Rect) {
             ..inner
         };
 
-        let display = match item {
+        let display: Cow<'_, str> = match item {
             CommandItem::Action {
                 name,
                 action: CommandAction::SwitchTheme(n),
                 ..
-            } if n == &app.config.default_theme => {
-                format!("{} *", name)
-            }
+            } if n == &app.config.default_theme => Cow::Owned(format!("{} *", name)),
             CommandItem::Action {
                 name,
                 action: CommandAction::ToggleSaveOnPlay,
@@ -65,9 +65,11 @@ pub(super) fn draw(f: &mut Frame, app: &App, area: Rect) {
                 } else {
                     "OFF"
                 };
-                format!("{name}: {state}")
+                Cow::Owned(format!("{name}: {state}"))
             }
-            CommandItem::Action { name, .. } | CommandItem::SubMenu { name, .. } => name.clone(),
+            CommandItem::Action { name, .. } | CommandItem::SubMenu { name, .. } => {
+                Cow::Borrowed(name)
+            }
         };
 
         let prefix = if i == panel.selected { "▶ " } else { "  " };

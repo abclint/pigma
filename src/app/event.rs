@@ -97,12 +97,12 @@ impl App {
                 self.playback.on_heartbeat_fallback();
             }
             PlaybackEvent::SetPlaylistId(id) => {
-                // 内容（重新）加载后，之前的"全量已入队"标记失效。
+                // After the content (re)loads, the previous "全量已入队" marker is stale.
                 self.queued_playlists.remove(&id);
                 self.playback.set_playlist_id(id);
             }
             PlaybackEvent::LikeSong(id, like) => {
-                // 立即更新本地集合并刷新图标（无论云端结果如何，与现有行为一致）。
+                // Update the local set immediately and refresh the icon (regardless of the cloud result, consistent with existing behavior).
                 if let Ok(mut guard) = self.liked_ids.lock() {
                     if like {
                         guard.insert(id);

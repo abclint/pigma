@@ -284,22 +284,7 @@ pub(super) fn handle_main_mouse(app: &mut App, kind: MouseEventKind, col: u16, r
 }
 
 fn current_api(app: &App) -> Option<&str> {
-    app.state
-        .navigation
-        .nav
-        .sections
-        .get(app.state.navigation.nav.focus_section)
-        .and_then(|s| {
-            let idx = app
-                .state
-                .navigation
-                .nav
-                .section_states
-                .get(app.state.navigation.nav.focus_section)?
-                .selected()?;
-            s.items.get(idx)
-        })
-        .and_then(|item| item.api.as_deref())
+    app.state.navigation.nav.selected_api()
 }
 
 fn is_daily_recommend(app: &App) -> bool {

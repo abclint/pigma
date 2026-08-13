@@ -131,7 +131,7 @@ impl<'a> Widget for CornerBlock<'a> {
             }
         }
 
-        // border gradient: 优先于 follow_corner_color
+        // border gradient: takes precedence over follow_corner_color
         if let Some(preset) = self.border_gradient {
             let h_span = right.saturating_sub(left);
             let v_span = bottom.saturating_sub(top);
@@ -190,7 +190,7 @@ impl<'a> Widget for CornerBlock<'a> {
                 }
             }
         } else if self.follow_corner_color {
-            // follow_corner_color: 将横竖边框也染成 corner 色
+            // follow_corner_color: also paint the horizontal and vertical borders with the corner color
             for x in (left + max_h)..=(right - max_h) {
                 if let Some(cell) = buf.cell_mut((x, top)) {
                     cell.fg = tl;
@@ -226,6 +226,7 @@ pub struct BlockStyle<'a> {
     pub tick: u64,
 }
 
+//todo 重构为CornerBlock的builder模式创建
 pub(super) fn create_block<'a>(
     title: &'a str,
     style: &'a BlockStyle<'a>,

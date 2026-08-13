@@ -96,9 +96,10 @@ pub(super) fn draw(
     f.render_stateful_widget(list, inner, &mut global_state);
 }
 
-/// 顶部/底部导航模式：所有 item 跨 section 平铺成一行，选中项以 accent 底色
-/// 高亮并带左右拼接字符，超宽时按 `NavState::scroll_x` 横向滚动，保证选中项
-/// 始终可见。
+/// Top/bottom navigation mode: all items across sections are laid out in a single row, the
+/// selected item is highlighted with the accent background plus side join characters, and when
+/// too wide it scrolls horizontally per `NavState::scroll_x` so the selected item stays
+/// visible.
 pub(super) fn draw_top(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, area: Rect) {
     let colors = bs.colors;
     let muted_style = Style::default().fg(colors.muted);
@@ -179,8 +180,9 @@ pub(super) fn draw_top(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, a
     f.render_widget(Paragraph::new(line).scroll((0, nav.scroll_x)), inner);
 }
 
-/// 计算横向滚动偏移，使 `[start, start+width)` 的选中项在 `viewport` 内可见，
-/// 且尽量保持当前滚动位置不动（仅当选中项越界时才滚动）。
+/// Compute the horizontal scroll offset so the selected item `[start, start+width)` is visible
+/// within `viewport`, keeping the current scroll position stable whenever possible (only
+/// scrolling when the selection goes out of bounds).
 pub(super) fn keep_visible(
     scroll: usize,
     start: usize,

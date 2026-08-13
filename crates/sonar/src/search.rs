@@ -7,18 +7,35 @@ use crate::provider::{
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
+/// How [`SonarFinder`] ranks the combined results from all providers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SearchMode {
+    /// Return results in the order providers responded (cheapest, ignores match quality).
     FirstReturned,
+    /// Re-rank by [`SonarFinder::calculate_match_score`] so the closest title wins (default).
     BestScore,
 }
 
+/// Weight multiplier for a query token found in the artist field (stronger
+/// signal than a bare name hit, see [`SonarFinder::calculate_match_score`]).
+const ARTIST_HIT_WEIGHT: f64 = 1.5;
+
+/// Duration-match bonus tiers, in milliseconds of difference from the target.
+/// A hit within 3s is worth more than a loose 30s match.
+const DURATION_MATCH_MS: [(u64, f64); 3] = [(3_000, 1.0), (10_000, 0.5), (30_000, 0.25)];
+
+/// Tunables for a [`SonarFinder`] search session.
 #[derive(Debug, Clone)]
 pub struct SearchConfig {
+    /// Ranking strategy (see [`SearchMode`]).
     pub mode: SearchMode,
+    /// Which providers to query, in the given order (priority still re-sorts them).
     pub providers: Vec<SonarSource>,
+    /// Allow lossless (flac/sq) candidates where a provider supports them.
     pub enable_flac: bool,
+    /// Per-provider search deadline in milliseconds.
     pub timeout_ms: u64,
+    /// Cap on songs kept from each provider before merging/ranking.
     pub max_results_per_provider: usize,
     /// Proxy URL for the domestic providers (kugou, kuwo, bilivideo). Empty = direct.
     pub search_proxy: String,
@@ -46,25 +63,30 @@ impl Default for SearchConfig {
 }
 
 impl SearchConfig {
+    /// Build a config with the default providers and settings.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Override the ranking mode.
     pub fn with_mode(mut self, mode: SearchMode) -> Self {
         self.mode = mode;
         self
     }
 
+    /// Restrict the active providers to the given set.
     pub fn with_providers(mut self, providers: Vec<SonarSource>) -> Self {
         self.providers = providers;
         self
     }
 
+    /// Toggle lossless candidates.
     pub fn with_flac(mut self, enable: bool) -> Self {
         self.enable_flac = enable;
         self
     }
 
+    /// Set the per-provider search timeout in milliseconds.
     pub fn with_timeout(mut self, ms: u64) -> Self {
         self.timeout_ms = ms;
         self
@@ -89,13 +111,18 @@ impl SearchConfig {
     }
 }
 
+/// Aggregates the configured providers and runs searches across them
+/// concurrently, merging and ranking the combined results.
 pub struct SonarFinder {
     providers: Vec<Arc<dyn SonarProvider>>,
     config: SearchConfig,
 }
 
 impl SonarFinder {
-    pub fn new(config: SearchConfig) -> Self {
+    /// Build a finder from `config`, instantiating and sorting the selected
+    /// providers by priority (highest first). Providers that report
+    /// [`SonarProvider::enabled`] `false` are skipped.
+    pub fn new(config: SearchConfig) -> Result<Self> {
         let mut providers: Vec<Arc<dyn SonarProvider>> = Vec::new();
 
         for source in &config.providers {
@@ -103,13 +130,13 @@ impl SonarFinder {
                 SonarSource::Kugou => Arc::new(KugouProvider::with_proxy(
                     config.enable_flac,
                     &config.search_proxy,
-                )),
-                SonarSource::Kuwo => Arc::new(KuwoProvider::with_proxy(&config.search_proxy)),
+                )?),
+                SonarSource::Kuwo => Arc::new(KuwoProvider::with_proxy(&config.search_proxy)?),
                 SonarSource::BiliVideo => {
-                    Arc::new(BiliVideoProvider::with_proxy(&config.search_proxy))
+                    Arc::new(BiliVideoProvider::with_proxy(&config.search_proxy)?)
                 }
                 SonarSource::Youtube => {
-                    Arc::new(YoutubeProvider::with_proxy(&config.youtube_proxy))
+                    Arc::new(YoutubeProvider::with_proxy(&config.youtube_proxy)?)
                 }
             };
             if provider.enabled() {
@@ -119,7 +146,7 @@ impl SonarFinder {
 
         providers.sort_by_key(|p| std::cmp::Reverse(p.priority()));
 
-        Self { providers, config }
+        Ok(Self { providers, config })
     }
 
     /// The provider sources, ordered by priority (highest first).
@@ -127,6 +154,9 @@ impl SonarFinder {
         self.providers.iter().map(|p| p.source()).collect()
     }
 
+    /// Run a search across all providers (each bounded by `timeout_ms`), merge
+    /// and rank the results, and return the combined [`SearchResult`]. Returns
+    /// [`crate::error::SonarError::NoResults`] when no provider returned anything.
     pub async fn search(&self, query: &SearchQuery) -> Result<SearchResult> {
         let (tx, mut rx) = mpsc::channel(self.providers.len());
         let query = std::sync::Arc::new(query.clone());
@@ -246,22 +276,24 @@ impl SonarFinder {
         // higher stops titles that embed the artist name from outscoring the
         // real recording (e.g. "只有爱 (cover: 许巍)" vs "只有爱 - 许巍").
         score += name_hits;
-        score += artist_hits * 1.5;
+        score += artist_hits * ARTIST_HIT_WEIGHT;
 
         if let Some(target_ms) = query.duration {
             let diff_ms = song.duration.abs_diff(target_ms);
-            if diff_ms <= 3_000 {
-                score += 1.0;
-            } else if diff_ms <= 10_000 {
-                score += 0.5;
-            } else if diff_ms <= 30_000 {
-                score += 0.25;
+            for (max_diff_ms, bonus) in DURATION_MATCH_MS {
+                if diff_ms <= max_diff_ms {
+                    score += bonus;
+                    break;
+                }
             }
         }
 
         score
     }
 
+    /// Search, then try each ranked song's provider for a playable URL and
+    /// return the first that resolves (best quality per the provider). Convenience
+    /// wrapper around [`Self::search`] + [`Self::get_play_url_for_song`].
     pub async fn search_and_get_url(
         &self,
         query: &SearchQuery,
@@ -326,7 +358,7 @@ impl SonarFinder {
 
     /// Best-effort lyrics: the song's own provider first, then keyword-search
     /// the configured sources (kugou preferred, then kuwo) for a matching song
-    /// and reuse its lyrics.
+    /// and reuse its lyrics. Returns `None` when no lyrics could be found.
     pub async fn get_lyrics_fallback(&self, song: &crate::model::Song) -> Option<String> {
         if let Ok(Some(l)) = self.get_lyrics(song).await
             && !l.trim().is_empty()
@@ -341,7 +373,7 @@ impl SonarFinder {
                 return Some(l);
             }
         }
-        Some("未找到歌词".into())
+        None
     }
 
     /// Best-effort cover: the song's own cover first, else keyword-search the
@@ -388,25 +420,21 @@ impl SonarFinder {
     }
 }
 
-impl Default for SonarFinder {
-    fn default() -> Self {
-        Self::new(SearchConfig::default())
-    }
-}
-
+/// One-shot search using the default config and [`SearchMode::BestScore`].
 pub async fn quick_search(keyword: &str) -> Result<(Song, crate::model::PlayUrlResult)> {
-    let finder = SonarFinder::default();
+    let finder = SonarFinder::new(SearchConfig::default())?;
     finder
         .search_and_get_url(&SearchQuery::new(keyword), None)
         .await
 }
 
+/// One-shot search using the default config with an explicit [`SearchMode`].
 pub async fn quick_search_with_mode(
     keyword: &str,
     mode: SearchMode,
 ) -> Result<(Song, crate::model::PlayUrlResult)> {
     let config = SearchConfig::new().with_mode(mode);
-    let finder = SonarFinder::new(config);
+    let finder = SonarFinder::new(config)?;
     finder
         .search_and_get_url(&SearchQuery::new(keyword), None)
         .await
