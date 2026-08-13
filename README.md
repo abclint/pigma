@@ -31,11 +31,13 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
     - [Title templates](#title-templates)
     - [Progress bar customization](#progress-bar-customization)
     - [Content cache](#content-cache)
+    - [Splash screen](#splash-screen)
     - [Lyric gradient](#lyric-gradient)
     - [Navigation items](#navigation-items)
       - [Section titles support rich-text markup](#section-titles-support-rich-text-markup)
     - [Theme](#theme)
   - [Development](#development)
+  - [Plan](#plan)
   - [License](#license)
 
 </details>
@@ -75,13 +77,13 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
 - [x] 重构播放队列添加逻辑
 - [x] 优化主题配色
 - [x] styled_text标记语法嵌套
+- [x] 重构进入程序流程
 - [ ] JSON IPC控制（waybar.etc）
 - [ ] 重写splash
 - [ ] command panel重写，更多运行时配置支持
 - [ ] 云盘源作为fallback
 - [ ] 本地音频歌词，元数据重写
 - [ ] landing page
-- [ ] 重构进入程序流程
 - [ ] 歌手信息
 - [ ] 行内简易模式
 - [ ] ~~修复手机验证码\邮箱登录~~
@@ -174,6 +176,7 @@ cargo build --release
 | left /right   |                   seek 15s                   |
 | p /n          |                上一首/下一首                 |
 | ctrl+p        |                command panel                 |
+| L             |               登录网易云                     |
 | c             |  切换表格为cell/row模式(回车进入歌手/专辑)   |
 | m             | 切换播放模式（适用于我的歌单或我喜欢的音乐） |
 | u             |  上传`本地音乐`或`下载管理`的音频到音乐云盘  |
@@ -388,6 +391,15 @@ Supported theme color names: `bg`, `surface`, `text`, `accent`, `highlight`, `mu
 content_cache_ttl = 300  # seconds, 0 to disable
 ```
 
+### Splash screen
+
+启动 splash 界面的进度条按设定时长播放动画，时间到了自动跳转到对应界面
+（未登录→主界面公开内容，已登录→主界面，离线→本地音乐）：
+
+```toml
+splash_duration_secs = 2.0
+```
+
 ### Lyric gradient
 
 歌词当前行高亮渐变风格（自实现，无额外依赖）：
@@ -508,7 +520,15 @@ git submodule update --init --recursive
 cargo run
 ```
 
+## Plan
 
+```sh
+# cli 设计
+# template: current/duration/artist/name/volume/status/previous/next
+pigma status --template "" --format [json/plain] # config.toml default value
+pigma msg [previous/next/pause/play/volume/mode/like/dislike] # or socat
+pigma --api [.../random](default:recommend_songs) # inline mode
+```
 ## License
 
 Licensed under the [Apach-2.0](LICENSE) license.
