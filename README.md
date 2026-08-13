@@ -61,7 +61,7 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
 - [x] 歌词渐变逐字高亮
 - [x] table标题自定义
 - [x] 心动模式
-- [x] 数据分页加载(目前仅支持云盘)
+- [x] 数据分页加载
 - [x] kugou,kuwo,bilibili,youtube源fallback(无需cookie),参考[UnblockNeteaseMusic](https://github.com/UnblockNeteaseMusic/server)
 - [x] 歌曲操作(like,dislike,fav .etc)
 - [x] 重构播放队列
@@ -74,9 +74,9 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
 - [x] 支持搜索多源
 - [x] 重构播放队列添加逻辑
 - [x] 优化主题配色
+- [x] styled_text标记语法嵌套
 - [ ] JSON IPC控制（waybar.etc）
 - [ ] 重写splash
-- [ ] styled_text标记语法嵌套
 - [ ] command panel重写，更多运行时配置支持
 - [ ] 云盘源作为fallback
 - [ ] 本地音频歌词，元数据重写
@@ -422,20 +422,42 @@ are styled by the active theme:
 
 **支持的标记语法**
 
-> 标记语法不限于导航列表，表格block title,表格标题,暂不支持嵌套
+> 标记语法不限于导航列表，表格 block title、表格标题等均支持。
 
-```rs
-/// Parse `<tag>text</tag>` markup into styled `Vec<Span>`.
-///
-/// Supported tags:
-/// - Theme colors: `<accent>`, `<text>`, `<muted>`, `<error>`, `<warning>`, `<highlight>`, `<bg>`, `<surface>`
-/// - Modifiers: `<b>` (bold), `<i>` (italic), `<dim>` (dimmed)
-/// - Literal colors: `<#rrggbb>`, or any name accepted by `ratatui::style::Color::from_str`
-/// - Gradient: `<gradient:preset>text</gradient>` or `<grad:preset>text</grad>` (per-char gradient coloring)
-///   Presets: warm, cubehelix, rainbow, turbo, spectral, viridis
-///
-/// Text without tags is rendered as plain spans with no styling.
-```
+| 类型 | 标签 | 含义 | 写法示例 |
+| --- | --- | --- | --- |
+| 主题色 | `<accent>` | 主题强调色 | `<accent>►</accent>` |
+| 主题色 | `<text>` | 主题正文色 | `<text>…</text>` |
+| 主题色 | `<muted>` | 主题弱化色 | `<muted>…</muted>` |
+| 主题色 | `<error>` | 主题错误色 | `<error>…</error>` |
+| 主题色 | `<bg>` | 主题背景色 | `<bg>…</bg>` |
+| 主题色 | `<surface>` | 主题面板色 | `<surface>…</surface>` |
+| 主题色 | `<border>` | 主题边框色 | `<border>…</border>` |
+| 修饰符 | `<b>` | 加粗 | `<b>DISCOVER</b>` |
+| 修饰符 | `<i>` | 斜体 | `<i>…</i>` |
+| 修饰符 | `<dim>` | 弱化 | `<dim>…</dim>` |
+| 字面颜色 | `<#rrggbb>` | 十六进制颜色 | `<#ff5500>…</#ff5500>` |
+| 字面颜色 | `<任意颜色名>` | ratatui 支持的颜色名（如 `red`、`blue`） | `<red>…</red>` |
+| 渐变色 | `<gradient:preset>…</gradient>` | 逐字符渐变 | `<gradient:rainbow>…</gradient>` |
+| 渐变色 | `<grad:preset>…</grad>` | 逐字符渐变（简写） | `<grad:turbo>…</grad>` |
+
+渐变预设：`warm`、`cubehelix`、`rainbow`、`turbo`、`spectral`、`viridis`。
+
+- 普通标签（主题色/修饰符/字面颜色）支持嵌套，例如 `<b><accent>DISCOVER</accent></b>` 会得到加粗的强调色文本。
+- 渐变标签内的内容不再解析内部标签，整段按字符上渐变色；渐变标签需成对使用（`</gradient>` 或 `</grad>`）。
+- 未含标签的文本按无样式渲染。
+
+**支持标记语法的内容**
+
+| 内容 | 配置项 | 位置 |
+| --- | --- | --- |
+| 表格列标题 | `[columns]` 或 `[columns.overrides]` 中的 `header` | content 表格 |
+| 导航区块标题 | `[[navigation.sections]]` 的 `title` | 侧边导航 |
+| 导航项名称 | `[[navigation.sections.items]]` 的 `name` | 侧边导航 |
+| 面包屑 | 沿用导航配置的 section `title` / item `name`，无独立配置项 | 顶部面包屑 |
+| Block 标题 | `title_template`（含 `{name}` `{count}` `{total}` 占位符，先替换再解析标记） | 内容区、队列、歌词页、帮助、命令面板等 |
+
+> 表格**行内容**（歌曲名、歌手等单元格）暂不支持标记语法，按纯文本渲染。
 
 
 Example (the default):
