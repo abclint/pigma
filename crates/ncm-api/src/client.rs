@@ -262,7 +262,12 @@ impl NcmClient {
     /// otherwise the configured User-Agent is used together with
     /// `Host: interface.music.163.com` (playback-URL and similar APIs).
     /// Sub-methods only convert their own parameter shapes into `serde_json::Value` and call this method.
-    async fn send_eapi(&self, path: &str, data: Value, mobile_ua: bool) -> Result<String, NcmError> {
+    async fn send_eapi(
+        &self,
+        path: &str,
+        data: Value,
+        mobile_ua: bool,
+    ) -> Result<String, NcmError> {
         let cookies = self.prepare_request(true)?;
 
         let now_ms = std::time::SystemTime::now()

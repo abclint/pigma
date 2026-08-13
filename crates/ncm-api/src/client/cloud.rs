@@ -92,9 +92,7 @@ impl NcmClient {
         let bitrate = 999000u32;
 
         // Step 1: pre-upload check (parameters aligned with the reference implementation, preserving JSON types)
-        let check_value: Value = self
-            .check_cloud_upload(&md5, size, bitrate)
-            .await?;
+        let check_value: Value = self.check_cloud_upload(&md5, size, bitrate).await?;
         let need_upload = check_value
             .get("needUpload")
             .and_then(|v| v.as_bool())
@@ -132,9 +130,7 @@ impl NcmClient {
             .replace('.', "_");
 
         // Step 3: request the NOS token
-        let resource_id = self
-            .alloc_nos_token("", &ext, &raw_name, &md5)
-            .await?;
+        let resource_id = self.alloc_nos_token("", &ext, &raw_name, &md5).await?;
 
         // Step 4: upload the raw bytes to NOS (only when needUpload requires it), aligned with uploadPlugin
         if need_upload {
