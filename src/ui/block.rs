@@ -77,6 +77,45 @@ impl<'a> CornerBlock<'a> {
         self
     }
 
+    pub(super) fn from_color(style: &'a BlockStyle<'a>, no_border_bg: Color) -> Self {
+        let border_color = style.colors.border;
+        let border_type = if style.border.rounded {
+            BorderType::Rounded
+        } else {
+            BorderType::Plain
+        };
+        let block = if style.border.enabled {
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(border_type)
+                .border_style(Style::default().fg(border_color))
+                .title_style(Style::default().fg(style.colors.muted))
+        } else {
+            Block::default()
+                .borders(Borders::NONE)
+                .border_style(Style::default().fg(border_color))
+                .style(Style::default().bg(no_border_bg))
+                .title_style(Style::default().fg(style.colors.muted))
+                .padding(Padding::horizontal(1))
+        };
+        Self::new(block)
+            .corner_color(style.colors.accent)
+            .corner_sizes(2, 1)
+            .follow_corner_color(style.border.follow_corner_color)
+            .border_gradient(style.border.border_gradient)
+            .border_gradient_speed(style.border.border_gradient_speed)
+            .tick(style.tick)
+    }
+
+    pub(super) fn title(mut self, title: &'a str, colors: &'a Theme) -> Self {
+        let title_line = ratatui::text::Line::from(styled_text::parse_styled(title, colors));
+        self.block = self
+            .block
+            .title(title_line)
+            .title_style(Style::default().fg(colors.muted));
+        self
+    }
+
     pub(super) fn inner(&self, area: Rect) -> Rect {
         self.block.inner(area)
     }
@@ -211,7 +250,7 @@ impl<'a> Widget for CornerBlock<'a> {
     }
 }
 
-// create block fn
+// create block builder
 
 use ratatui::style::Style;
 use ratatui::widgets::{BorderType, Borders, Padding};
@@ -224,59 +263,4 @@ pub struct BlockStyle<'a> {
     pub colors: &'a Theme,
     pub border: &'a BorderConfig,
     pub tick: u64,
-}
-
-//todo 重构为CornerBlock的builder模式创建
-pub(super) fn create_block<'a>(
-    title: &'a str,
-    style: &'a BlockStyle<'a>,
-    _focused: bool,
-) -> CornerBlock<'a> {
-    create_block_bg(title, style, _focused, style.colors.bg)
-}
-
-pub(super) fn create_block_surfaced<'a>(
-    title: &'a str,
-    style: &'a BlockStyle<'a>,
-    _focused: bool,
-) -> CornerBlock<'a> {
-    create_block_bg(title, style, _focused, style.colors.surface)
-}
-
-fn create_block_bg<'a>(
-    title: &'a str,
-    style: &'a BlockStyle<'a>,
-    _focused: bool,
-    no_border_bg: Color,
-) -> CornerBlock<'a> {
-    let border_color = style.colors.border;
-    let border_type = if style.border.rounded {
-        BorderType::Rounded
-    } else {
-        BorderType::Plain
-    };
-    let title_line = ratatui::text::Line::from(styled_text::parse_styled(title, style.colors));
-    let block = if style.border.enabled {
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(border_type)
-            .border_style(Style::default().fg(border_color))
-            .title(title_line)
-            .title_style(Style::default().fg(style.colors.muted))
-    } else {
-        Block::default()
-            .borders(Borders::NONE)
-            .border_style(Style::default().fg(border_color))
-            .style(Style::default().bg(no_border_bg))
-            .title(title_line)
-            .title_style(Style::default().fg(style.colors.muted))
-            .padding(Padding::horizontal(1))
-    };
-    CornerBlock::new(block)
-        .corner_color(style.colors.accent)
-        .corner_sizes(2, 1)
-        .follow_corner_color(style.border.follow_corner_color)
-        .border_gradient(style.border.border_gradient)
-        .border_gradient_speed(style.border.border_gradient_speed)
-        .tick(style.tick)
 }

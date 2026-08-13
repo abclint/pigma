@@ -9,8 +9,9 @@ use ratatui::{
 };
 
 use super::BlockStyle;
+use super::block::CornerBlock;
 use crate::state::{CommandAction, CommandItem};
-use crate::{app::App, ui::block::create_block_surfaced};
+use crate::app::App;
 
 pub(super) fn draw(f: &mut Frame, app: &App, area: Rect) {
     let panel = &app.state.command_panel;
@@ -33,7 +34,7 @@ pub(super) fn draw(f: &mut Frame, app: &App, area: Rect) {
         border: &app.state.border,
         tick: app.state.tick,
     };
-    let block = create_block_surfaced(title, &style, false);
+    let block = CornerBlock::from_color(&style, colors.surface).title(title, colors);
     let inner = block.inner(popup_area);
 
     f.render_widget(Clear, popup_area);

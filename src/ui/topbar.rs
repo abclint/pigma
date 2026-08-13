@@ -5,7 +5,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
 use super::BlockStyle;
-use super::create_block;
+use super::block::CornerBlock;
 use crate::config::Theme;
 use crate::state::SearchState;
 use ncm_api::LoginInfo;
@@ -19,7 +19,7 @@ pub(super) fn draw(
     area: Rect,
 ) {
     let colors = bs.colors;
-    let block = create_block("", bs, false);
+    let block = CornerBlock::from_color(bs, bs.colors.bg);
     let inner = block.inner(area);
     f.render_widget(block, area);
 

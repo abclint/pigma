@@ -11,7 +11,7 @@ use super::BlockStyle;
 use crate::{
     state::NavState,
     ui::{
-        block::{create_block, create_block_surfaced},
+        block::CornerBlock,
         styled_text,
     },
 };
@@ -25,7 +25,7 @@ pub(super) fn draw(
 ) {
     let colors = bs.colors;
     let muted_style = Style::default().fg(colors.muted);
-    let block = create_block(title, bs, false);
+    let block = CornerBlock::from_color(bs, bs.colors.bg).title(title, bs.colors);
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -103,7 +103,7 @@ pub(super) fn draw(
 pub(super) fn draw_top(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, area: Rect) {
     let colors = bs.colors;
     let muted_style = Style::default().fg(colors.muted);
-    let block = create_block_surfaced("", bs, false);
+    let block = CornerBlock::from_color(bs, bs.colors.surface);
     let inner = block.inner(area);
     f.render_widget(block, area);
 

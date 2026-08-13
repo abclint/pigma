@@ -7,7 +7,7 @@ use ratatui::widgets::{Cell, Paragraph, Row, Table};
 use unicode_width::UnicodeWidthStr;
 
 use super::BlockStyle;
-use super::create_block;
+use super::block::CornerBlock;
 use super::navigation::keep_visible;
 
 use super::scrollbar::{calc_scroll_offset, render_scrollbar};
@@ -48,7 +48,7 @@ pub(super) fn draw_queue_table(
     } else {
         render_title(title_template, key, count, 0)
     };
-    let block = create_block(&title, bs, false);
+    let block = CornerBlock::from_color(bs, bs.colors.bg).title(&title, bs.colors);
     let inner = block.inner(area);
     f.render_widget(block, area);
 
