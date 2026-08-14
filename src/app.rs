@@ -26,6 +26,7 @@ use crate::cache::CacheManager;
 use crate::config::{Config, ThemeRegistry};
 use crate::event::AuthEvent;
 use crate::event::EventHandler;
+use crate::ipc::{IpcEvent, StatusSnapshot};
 use crate::playback::PlaybackEngine;
 use crate::service::ApiService;
 use crate::state::{
@@ -55,6 +56,8 @@ pub struct App {
     pub liked_ids: Arc<Mutex<HashSet<u64>>>,
     /// Playlists whose full tracks have already been merged into the playback queue for lazy pagination, avoiding repeated Enter presses refetching/truncating the queue.
     queued_playlists: HashSet<u64>,
+    /// Live playback snapshot served to `pigma status` over the IPC socket.
+    pub status: Arc<Mutex<StatusSnapshot>>,
 }
 
 impl App {
@@ -185,6 +188,7 @@ impl App {
             sonar_songs,
             liked_ids,
             queued_playlists: HashSet::new(),
+            status: Arc::new(Mutex::new(StatusSnapshot::default())),
         })
     }
 
@@ -216,9 +220,65 @@ impl App {
         self.toast(format!("◧ 导航栏位置: {}", pos.label()));
     }
 
+    /// Refresh the IPC status snapshot from the live playback state.
+    fn update_status_snapshot(&self) {
+        if let Ok(mut snapshot) = self.status.lock() {
+            *snapshot = StatusSnapshot::from_playback(&self.playback.state);
+        }
+    }
+
+    /// Apply a control request received over the IPC socket (`pigma msg`).
+    fn handle_ipc_event(&mut self, event: IpcEvent) {
+        match event {
+            IpcEvent::Previous => self.playback.prev(),
+            IpcEvent::Next => self.playback.next(),
+            IpcEvent::Pause => {
+                if !self.playback.state.paused {
+                    self.playback.toggle_pause();
+                }
+            }
+            IpcEvent::Play => {
+                if self.playback.state.paused {
+                    self.playback.toggle_pause();
+                }
+            }
+            IpcEvent::Volume { delta, absolute } => {
+                if let Some(delta) = delta {
+                    self.adjust_volume(delta);
+                } else if let Some(volume) = absolute {
+                    let volume = volume.clamp(0.0, 1.0);
+                    self.playback.set_volume(volume);
+                    self.toast(format!("   {:.0}%", volume * 100.0));
+                }
+            }
+            IpcEvent::Mode => {
+                let mode = self.playback.cycle_mode();
+                let (_, label) = crate::playback::mode_icon(&mode);
+                self.toast(format!("🔄 播放模式: {label}"));
+            }
+            IpcEvent::Like => {
+                if let Some(song) = self.playback.current_song() {
+                    self.state
+                        .events
+                        .send(crate::event::PlaybackEvent::LikeSong(song.id, true));
+                }
+            }
+            IpcEvent::Dislike => {
+                if let Some(song) = self.playback.current_song() {
+                    self.state
+                        .events
+                        .send(crate::event::PlaybackEvent::DislikeSong(song.id));
+                }
+            }
+        }
+    }
+
     pub async fn run(mut self, mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
         self.start_splash_boot();
+        let _ipc_guard =
+            crate::ipc::start_server(Arc::clone(&self.status), self.state.events.sender());
         while self.state.running {
+            self.update_status_snapshot();
             terminal.draw(|frame| self.draw(frame))?;
             self.handle_events().await?;
 
