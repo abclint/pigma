@@ -15,8 +15,6 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
-# ensure that the workflow is only triggered once per PR, subsequent pushes to the PR will cancel
-# and restart the workflow. See https://docs.github.com/en/actions/using-jobs/using-concurrency
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
@@ -73,11 +71,19 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
+
+      # 为容器内的 cargo 注入环境变量
+      - name: Setup Cargo Env
+        run: |
+          mkdir -p .cargo
+          cat <<EOF >> .cargo/config.toml
+          [env]
+          PKG_CONFIG_ALLOW_CROSS = "1"
+          PKG_CONFIG_PATH = "/usr/lib/aarch64-linux-gnu/pkgconfig"
+          EOF
+
       - name: Build for aarch64-unknown-linux-gnu
         uses: houseabsolute/actions-rust-cross@v0
-        env:
-          PKG_CONFIG_ALLOW_CROSS: '1'
-          PKG_CONFIG_PATH: '/usr/lib/aarch64-linux-gnu/pkgconfig'
         with:
           target: aarch64-unknown-linux-gnu
           command: build
@@ -93,11 +99,19 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
+
+      # 为容器内的 cargo 注入环境变量
+      - name: Setup Cargo Env
+        run: |
+          mkdir -p .cargo
+          cat <<EOF >> .cargo/config.toml
+          [env]
+          PKG_CONFIG_ALLOW_CROSS = "1"
+          PKG_CONFIG_PATH = "/usr/local/aarch64-linux-musl/usr/lib/pkgconfig"
+          EOF
+
       - name: Build for aarch64-unknown-linux-musl
         uses: houseabsolute/actions-rust-cross@v0
-        env:
-          PKG_CONFIG_ALLOW_CROSS: '1'
-          PKG_CONFIG_PATH: '/usr/local/aarch64-linux-musl/usr/lib/pkgconfig'
         with:
           target: aarch64-unknown-linux-musl
           command: build
@@ -114,35 +128,22 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Install musl-tools and build ALSA
+      # 为容器内的 cargo 注入环境变量
+      - name: Setup Cargo Env
         run: |
-          sudo apt-get update
-          sudo apt-get install -y musl-tools wget make
-          SYSROOT="/usr/local/x86_64-linux-musl"
-          sudo mkdir -p "$SYSROOT"
-          sudo chown -R $USER "$SYSROOT"
-          ALSA_VERSION="1.2.16.1"
-          ALSA_URL="https://www.alsa-project.org/files/pub/lib/alsa-lib-${ALSA_VERSION}.tar.bz2"
-          cd /tmp
-          wget -q "$ALSA_URL"
-          tar xf "alsa-lib-${ALSA_VERSION}.tar.bz2"
-          cd "alsa-lib-${ALSA_VERSION}"
-          export CC="musl-gcc"
-          export CFLAGS="-fPIC"
-          ./configure --host=x86_64-linux-musl --prefix="$SYSROOT/usr" --enable-static --disable-shared --disable-python --without-versioned
-          make -j"$(nproc)"
-          make install
+          mkdir -p .cargo
+          cat <<EOF >> .cargo/config.toml
+          [env]
+          PKG_CONFIG_ALLOW_CROSS = "1"
+          PKG_CONFIG_PATH = "/usr/local/x86_64-linux-musl/usr/lib/pkgconfig"
+          EOF
 
       - name: Build for x86_64-unknown-linux-musl
         uses: houseabsolute/actions-rust-cross@v0
-        env:
-          PKG_CONFIG_ALLOW_CROSS: '1'
-          PKG_CONFIG_PATH: '/usr/local/x86_64-linux-musl/usr/lib/pkgconfig'
         with:
           target: x86_64-unknown-linux-musl
           command: build
           args: '--locked'
-
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
   test:
@@ -153,12 +154,6 @@ jobs:
       matrix:
         os: [macos-latest, windows-latest]
     steps:
-      # if your project needs OpenSSL, uncomment this to fix Windows builds.
-      # it's commented out by default as the install command takes 5-10m.
-      # - run: echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
-      #   if: runner.os == 'Windows'
-      # - run: vcpkg install openssl:x64-windows-static-md
-      #   if: runner.os == 'Windows'
       - name: Checkout
         uses: actions/checkout@v7
         with:
@@ -166,7 +161,6 @@ jobs:
           fetch-depth: 0
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-      # enable this ci template to run regardless of whether the lockfile is checked in or not
       - name: cargo generate-lockfile
         if: hashFiles('Cargo.lock') == ''
         run: cargo generate-lockfile
