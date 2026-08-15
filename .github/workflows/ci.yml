@@ -73,10 +73,6 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
-      - name: Install Linux audio dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config libasound2-dev
       - name: Build for aarch64-unknown-linux-gnu
         uses: houseabsolute/actions-rust-cross@v0
         with:
@@ -94,10 +90,6 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
-      - name: Install Linux audio dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config libasound2-dev
       - name: Build for aarch64-unknown-linux-musl
         uses: houseabsolute/actions-rust-cross@v0
         with:
