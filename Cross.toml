@@ -9,7 +9,7 @@ pre-build = ["""
 set -eux
 SYSROOT="/usr/local/aarch64-linux-musl"
 ALSA_VERSION="1.2.13"
-ALSA_URL="https://github.com/alsa-project/alsa-lib/releases/download/v${ALSA_VERSION}/alsa-lib-${ALSA_VERSION}.tar.bz2"
+ALSA_URL="https://www.alsa-project.org/files/pub/lib/alsa-lib-${ALSA_VERSION}.tar.bz2"
 apt-get update
 apt-get install --assume-yes --no-install-recommends wget make
 cd /tmp
