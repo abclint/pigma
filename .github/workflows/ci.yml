@@ -136,6 +136,7 @@ jobs:
 
           ln -s /usr/include/linux "$SYSROOT/usr/include/linux"
           ln -s /usr/include/x86_64-linux-gnu/asm "$SYSROOT/usr/include/asm"
+          ln -s /usr/include/asm-generic "$SYSROOT/usr/include/asm-generic"
 
           ALSA_VERSION="1.2.16.1"
           ALSA_URL="https://www.alsa-project.org/files/pub/lib/alsa-lib-${ALSA_VERSION}.tar.bz2"
