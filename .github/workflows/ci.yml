@@ -143,8 +143,11 @@ jobs:
           wget -q "$ALSA_URL"
           tar xf "alsa-lib-${ALSA_VERSION}.tar.bz2"
           cd "alsa-lib-${ALSA_VERSION}"
+
           export CC="musl-gcc"
-          export CFLAGS="-fPIC"
+          export CFLAGS="-fPIC -isystem $SYSROOT/usr/include"
+          export LDFLAGS="-L$SYSROOT/usr/lib"
+
           ./configure --host=x86_64-linux-musl --prefix="$SYSROOT/usr" --enable-static --disable-shared --disable-python --without-versioned
           make -j"$(nproc)"
           make install
