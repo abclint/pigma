@@ -98,6 +98,23 @@ jobs:
           args: "--locked"
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
+  build-x86_64-musl:
+    name: build linux/x86_64/musl
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - name: Build for x86_64-unknown-linux-musl
+        uses: houseabsolute/actions-rust-cross@v0
+        with:
+          target: x86_64-unknown-linux-musl
+          command: build
+          args: "--locked"
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
   test:
     runs-on: ${{ matrix.os }}
     name: test ${{ matrix.os }}
