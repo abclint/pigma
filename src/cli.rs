@@ -1,85 +1,236 @@
-//! CLI entry: `pigma status` and `pigma msg` subcommands plus the argument
-//! parser. The TUI itself runs when no subcommand is given.
+//! CLI entry: `pigma status` / `pigma msg` / `pigma list` subcommands plus the
+//! argument parser. The TUI itself runs when no subcommand is given.
 
+use clap::builder::Styles;
+use clap::builder::styling::AnsiColor;
 use clap::{Parser, Subcommand};
+
+use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::config::Config;
 use crate::ipc::{self, MsgAction, StatusSnapshot};
+
+const STYLES: Styles = Styles::styled()
+    .header(AnsiColor::Yellow.on_default().bold())
+    .usage(AnsiColor::Yellow.on_default().bold())
+    .literal(AnsiColor::Cyan.on_default().bold())
+    .placeholder(AnsiColor::Cyan.on_default());
 
 #[derive(Debug, Parser)]
 #[command(
     name = "pigma",
     version,
+    disable_version_flag = true,
     about = "A netease cloud music client",
-    long_about = "A netease cloud music client.\n\nWithout a subcommand this launches the interactive TUI. `pigma status` reports the state of a running instance and `pigma msg` controls it."
+    long_about = "A netease cloud music client.\n\nNo subcommand launches the TUI; `status` / `msg` / `list` query or control a running instance.",
+    args_conflicts_with_subcommands = true,
+    styles = STYLES
 )]
 pub struct Cli {
+    /// Print version and exit.
+    #[arg(short = 'v', long = "version", action = clap::ArgAction::Version)]
+    pub version: Option<bool>,
+    /// Run headless, loading an endpoint (default `__liked__`).
+    #[arg(
+        long,
+        short = 'd',
+        value_name = "ENDPOINT",
+        num_args = 0..=1,
+        default_missing_value = "__liked__"
+    )]
+    pub daemon: Option<String>,
+    /// Load the N-th playlist of the endpoint (1-based).
+    #[arg(long, value_name = "INDEX")]
+    pub playlist: Option<usize>,
+    /// IPC socket path.
+    #[arg(long, value_name = "SOCKET")]
+    pub socket: Option<PathBuf>,
     #[command(subcommand)]
     pub command: Option<Command>,
 }
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Show the status of the running pigma instance.
+    /// Show the running instance's status.
     Status {
-        /// Output template (plain format only). Tokens: {current}, {duration},
-        /// {artist}, {name}, {album}, {volume}, {status}, {position}, {mode},
-        /// {id}, {liked}. Defaults to config's `cli_status_template`.
+        /// Output template: {name} {artist} {album} {duration} {position}
+        /// {volume} {status} {mode} {id} {liked}. Defaults to config.
         #[arg(long, default_value = "")]
         template: String,
-        /// Output format: `json` or `plain`. Defaults to config's
-        /// `cli_status_format`.
+        /// Output as JSON.
         #[arg(long)]
-        format: Option<String>,
+        json: bool,
+        /// List the playback queue (`>` marks the current song).
+        #[arg(short = 'L', long)]
+        list: bool,
+        /// IPC socket path.
+        #[arg(long, value_name = "SOCKET")]
+        socket: Option<PathBuf>,
     },
-    /// Control the running pigma instance.
+    /// List an endpoint's playlists (or songs) with 1-based indexes.
+    List {
+        /// API endpoint: `toplist`, `top_song_list`, `__liked__`, etc.
+        endpoint: String,
+    },
+    /// Control the running instance.
     Msg {
-        /// Action: previous | next | pause | play | volume | mode | like | dislike.
+        /// Action: previous | next | pause | play | volume | mode | like |
+        /// dislike | toggle_like | switch-list.
         action: String,
-        /// Value for `volume`: absolute percent (e.g. `75`) or a signed delta
-        /// percent (e.g. `+5`, `-5`) matching the TUI's `+`/`-` behavior.
+        /// Value for `volume` (`75`/`+5`/`-5`) or the endpoint for `switch-list`.
+        #[arg(allow_hyphen_values = true)]
         value: Option<String>,
+        /// Playlist index for `switch-list` (1-based).
+        #[arg(long, value_name = "INDEX")]
+        playlist: Option<usize>,
+        /// IPC socket path.
+        #[arg(long, value_name = "SOCKET")]
+        socket: Option<PathBuf>,
     },
 }
 
 /// `pigma status` handler.
-pub async fn status(template: &str, format: Option<&str>) -> color_eyre::Result<()> {
+pub async fn status(template: &str, json: bool, list: bool) -> color_eyre::Result<()> {
     let config = Config::load();
+    if list {
+        let queue = ipc::fetch_queue().await?;
+        if json {
+            println!("{}", serde_json::to_string_pretty(&queue)?);
+        } else {
+            let current = queue.current_index;
+            for (i, song) in queue.songs.iter().enumerate() {
+                let marker = if Some(i) == current { ">" } else { " " };
+                println!(
+                    "{marker} {:<3} {:<32} {:<24} {}",
+                    i + 1,
+                    song.name,
+                    song.singer,
+                    format_duration(song.duration_ms)
+                );
+            }
+        }
+        return Ok(());
+    }
     let snapshot = ipc::fetch_status().await?;
-    let format = format.unwrap_or(&config.cli_status_format);
-    match format {
-        "json" => {
-            println!("{}", serde_json::to_string_pretty(&snapshot)?);
+    if json || config.cli_status_format == "json" {
+        println!("{}", serde_json::to_string_pretty(&snapshot)?);
+    } else {
+        let template = if template.is_empty() {
+            &config.cli_status_template
+        } else {
+            template
+        };
+        println!("{}", format_status(template, &snapshot));
+    }
+    Ok(())
+}
+
+/// `pigma list` handler: resolve an endpoint without a running daemon and print
+/// the playlists (or songs) it yields, numbered by their 1-based index.
+pub async fn list(endpoint: &str) -> color_eyre::Result<()> {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let config = Config::load();
+
+    let cookie_path = crate::utils::pigma_config_dir().join("cookies.json");
+    let mut api_builder = ncm_api::NcmClient::builder().cookie_path(cookie_path);
+    let ncm_proxy = match config.proxy_target {
+        crate::config::ProxyTarget::Reversed | crate::config::ProxyTarget::Both => {
+            config.proxy.as_str()
         }
-        "plain" => {
-            let template = if template.is_empty() {
-                &config.cli_status_template
-            } else {
-                template
-            };
-            println!("{}", format_status(template, &snapshot));
+        _ => "",
+    };
+    if !ncm_proxy.is_empty() {
+        api_builder = api_builder.proxy(ncm_proxy);
+    }
+    let api = Arc::new(api_builder.build()?);
+
+    let cache_dir = {
+        let path = std::path::Path::new(&config.cache.cache_dir);
+        if path.is_absolute() {
+            std::path::PathBuf::from(&config.cache.cache_dir)
+        } else {
+            crate::utils::pigma_cache_dir().join(&config.cache.cache_dir)
         }
-        other => {
-            eprintln!("unknown format `{other}` (expected json or plain)");
-            std::process::exit(1);
+    };
+    let cache = Arc::new(crate::cache::CacheManager::new(
+        cache_dir,
+        crate::utils::pigma_cache_dir(),
+        config.cache.cache_template.clone(),
+    ));
+    let service = crate::service::ApiService::new(api.clone(), cache);
+
+    let uid = if api.is_logged_in() {
+        api.login_status().await.ok().map(|info| info.uid)
+    } else {
+        None
+    };
+
+    let api_ep = crate::service::ApiEndpoint::parse(endpoint).unwrap_or_else(|| {
+        eprintln!("未知端点: {endpoint}");
+        std::process::exit(1);
+    });
+
+    let (content, _) = service
+        .resolve_content(api_ep, uid, config.search_limit)
+        .await;
+
+    match content {
+        crate::state::ContentState::SongLists(lists) => {
+            for (i, list) in lists.iter().enumerate() {
+                println!("{:>3}. {}", i + 1, list.name);
+            }
         }
+        crate::state::ContentState::TopLists(lists) => {
+            for (i, list) in lists.iter().enumerate() {
+                println!("{:>3}. {}", i + 1, list.name);
+            }
+        }
+        crate::state::ContentState::Songs(songs) => {
+            for (i, song) in songs.iter().enumerate() {
+                println!("{:>3}. {} - {}", i + 1, song.name, song.singer);
+            }
+        }
+        crate::state::ContentState::Error(e) => {
+            eprintln!("{endpoint}: {e}");
+        }
+        _ => eprintln!("{endpoint}: 无可列出的内容"),
     }
     Ok(())
 }
 
 /// `pigma msg` handler.
-pub async fn msg(action: &str, value: Option<&str>) -> color_eyre::Result<()> {
-    let action = parse_msg_action(action, value)?;
+pub async fn msg(
+    action: &str,
+    value: Option<&str>,
+    playlist: Option<usize>,
+) -> color_eyre::Result<()> {
+    let action = parse_msg_action(action, value, playlist)?;
     ipc::send_msg(action).await?;
     Ok(())
 }
 
-fn parse_msg_action(action: &str, value: Option<&str>) -> color_eyre::Result<MsgAction> {
+fn parse_msg_action(
+    action: &str,
+    value: Option<&str>,
+    playlist: Option<usize>,
+) -> color_eyre::Result<MsgAction> {
     match action {
         "previous" | "prev" => Ok(MsgAction::Previous),
         "next" => Ok(MsgAction::Next),
         "pause" => Ok(MsgAction::Pause),
         "play" => Ok(MsgAction::Play),
+        "switch-list" | "list" | "switch" => {
+            let endpoint = value.ok_or_else(|| {
+                color_eyre::eyre::eyre!(
+                    "switch-list requires an endpoint (e.g. `pigma msg switch-list toplist`)"
+                )
+            })?;
+            Ok(MsgAction::SwitchList {
+                endpoint: endpoint.to_string(),
+                playlist,
+            })
+        }
         "volume" => {
             let value = value.ok_or_else(|| {
                 color_eyre::eyre::eyre!("volume requires a value like `75`, `+5` or `-5`")
@@ -89,8 +240,9 @@ fn parse_msg_action(action: &str, value: Option<&str>) -> color_eyre::Result<Msg
         "mode" => Ok(MsgAction::Mode),
         "like" => Ok(MsgAction::Like),
         "dislike" => Ok(MsgAction::Dislike),
+        "toggle_like" | "unlike" | "toggle" => Ok(MsgAction::ToggleLike),
         other => Err(color_eyre::eyre::eyre!(
-            "unknown action `{other}` (expected previous/next/pause/play/volume/mode/like/dislike)"
+            "unknown action `{other}` (expected previous/next/pause/play/switch-list/volume/mode/like/dislike/toggle_like)"
         )),
     }
 }
@@ -102,7 +254,11 @@ fn parse_volume(value: &str) -> color_eyre::Result<MsgAction> {
     let err = || color_eyre::eyre::eyre!("invalid volume `{value}`");
     if let Some(delta) = value.strip_prefix('+').or_else(|| value.strip_prefix('-')) {
         let number: f64 = delta.parse().map_err(|_| err())?;
-        let signed = if value.starts_with('-') { -number } else { number };
+        let signed = if value.starts_with('-') {
+            -number
+        } else {
+            number
+        };
         Ok(MsgAction::Volume {
             delta: Some(signed / 100.0),
             absolute: None,

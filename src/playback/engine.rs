@@ -359,6 +359,14 @@ impl PlaybackEngine {
 
     /// Replace the queue for `key` with `songs` and start playing `index`.
     pub fn play_songs(&mut self, key: &str, songs: Vec<Arc<SongInfo>>, index: usize) {
+        self.load_songs(key, songs, index);
+        self.start_current_song(None);
+    }
+
+    /// Load `songs` as the active queue without starting playback, so the first
+    /// song is shown (paused/stopped) and can be started later via `play`/
+    /// toggle. Same queue bookkeeping as `play_songs`, minus `start_current_song`.
+    pub fn load_songs(&mut self, key: &str, songs: Vec<Arc<SongInfo>>, index: usize) {
         if songs.is_empty() || index >= songs.len() {
             return;
         }
@@ -369,7 +377,12 @@ impl PlaybackEngine {
         self.queue = PlaylistQueue::from_songs(songs, index);
         self.strategy =
             mode::create_strategy(&self.state.mode, self.queue.len(), self.queue.current_index);
-        self.start_current_song(None);
+        self.state.current_song = self.queue.current_song().cloned();
+        self.state.progress = 0.0;
+        self.state.playing = false;
+        self.state.paused = false;
+        self.state.seeking = false;
+        self.update_liked_status();
     }
 
     /// The dated queue key `context` maps to (same derivation as `play_songs`),

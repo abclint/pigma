@@ -11,9 +11,10 @@
 //! The socket file is user-scoped (`pigma_cache_dir`) so no authentication is
 //! needed.
 
+use std::cell::RefCell;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use color_eyre::eyre::{OptionExt, WrapErr};
 use serde::{Deserialize, Serialize};
@@ -33,6 +34,8 @@ pub const SOCKET_FILE: &str = "pigma.sock";
 #[serde(tag = "cmd", rename_all = "snake_case")]
 pub enum IpcRequest {
     Status,
+    /// Return the current playback queue (`pigma status -L`).
+    List,
     Msg { action: MsgAction },
 }
 
@@ -47,10 +50,21 @@ pub enum MsgAction {
     /// Exactly one of `delta` / `absolute` is set:
     /// - `delta`: fraction of 0..=1 to add/subtract (mirrors the TUI's `+`/`-`).
     /// - `absolute`: target fraction of 0..=1.
-    Volume { delta: Option<f64>, absolute: Option<f64> },
+    Volume {
+        delta: Option<f64>,
+        absolute: Option<f64>,
+    },
     Mode,
     Like,
     Dislike,
+    ToggleLike,
+    /// Dynamically switch the daemon's queue to another endpoint. `endpoint` is
+    /// an API endpoint name (e.g. `toplist`, `__liked__`); `playlist` optionally
+    /// picks the 1-based playlist within list-type endpoints.
+    SwitchList {
+        endpoint: String,
+        playlist: Option<usize>,
+    },
 }
 
 /// Runtime event dispatched to the app loop for a `msg` action.
@@ -60,10 +74,18 @@ pub enum IpcEvent {
     Next,
     Pause,
     Play,
-    Volume { delta: Option<f64>, absolute: Option<f64> },
+    Volume {
+        delta: Option<f64>,
+        absolute: Option<f64>,
+    },
     Mode,
     Like,
     Dislike,
+    ToggleLike,
+    SwitchList {
+        endpoint: String,
+        playlist: Option<usize>,
+    },
 }
 
 impl From<MsgAction> for IpcEvent {
@@ -77,6 +99,10 @@ impl From<MsgAction> for IpcEvent {
             MsgAction::Mode => IpcEvent::Mode,
             MsgAction::Like => IpcEvent::Like,
             MsgAction::Dislike => IpcEvent::Dislike,
+            MsgAction::ToggleLike => IpcEvent::ToggleLike,
+            MsgAction::SwitchList { endpoint, playlist } => {
+                IpcEvent::SwitchList { endpoint, playlist }
+            }
         }
     }
 }
@@ -135,17 +161,70 @@ fn mode_key(mode: &PlayMode) -> &'static str {
     }
 }
 
+/// A single entry in the playback queue, served to `pigma status -L`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueueEntry {
+    pub id: u64,
+    pub name: String,
+    pub singer: String,
+    pub album: String,
+    pub duration_ms: u64,
+}
+
+impl QueueEntry {
+    pub fn from_song(song: &ncm_api::SongInfo) -> Self {
+        Self {
+            id: song.id,
+            name: song.name.clone(),
+            singer: song.singer.clone(),
+            album: song.album.clone(),
+            duration_ms: song.duration,
+        }
+    }
+}
+
+/// Full queue listing served to `pigma status -L`: the current song's queue
+/// index (0-based, `None` when nothing is queued) plus the songs.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct QueueSnapshot {
+    pub current_index: Option<usize>,
+    pub songs: Vec<QueueEntry>,
+}
+
 fn socket_path() -> PathBuf {
     pigma_cache_dir().join(SOCKET_FILE)
 }
 
-/// Resolve the socket path, honoring `PIGMA_SOCKET` for tests/tools that need a
-/// non-default location (e.g. one socket per integration test).
-fn resolve_socket_path() -> PathBuf {
-    match std::env::var("PIGMA_SOCKET") {
-        Ok(path) if !path.is_empty() => PathBuf::from(path),
-        _ => socket_path(),
+thread_local! {
+    static SOCKET_OVERRIDE: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
+}
+
+/// Process-wide socket-path override (set once by the CLI's `--socket` flag).
+/// The thread-local test override, when present, still takes precedence.
+static SOCKET_GLOBAL: OnceLock<PathBuf> = OnceLock::new();
+
+/// Override the socket path for this thread (used by integration tests, which
+/// each bind their own socket so they can run in parallel). Safe because the
+/// override is thread-local.
+#[doc(hidden)]
+pub fn set_socket_path_override(path: Option<PathBuf>) {
+    SOCKET_OVERRIDE.with(|c| *c.borrow_mut() = path);
+}
+
+/// Override the socket path process-wide (used by the CLI `--socket` flag so a
+/// daemon and the `status`/`msg` commands can address a non-default instance).
+pub fn set_socket_path(path: Option<PathBuf>) {
+    if let Some(p) = path {
+        let _ = SOCKET_GLOBAL.set(p);
     }
+}
+
+/// Resolve the socket path: a thread-local override if set, otherwise the
+/// process-wide override, otherwise the default location under `pigma_cache_dir()`.
+fn resolve_socket_path() -> PathBuf {
+    SOCKET_OVERRIDE
+        .with(|c| c.borrow().clone())
+        .unwrap_or_else(|| SOCKET_GLOBAL.get().cloned().unwrap_or_else(socket_path))
 }
 
 /// Bind the socket, clearing any stale file left by a previous run. Returns the
@@ -162,7 +241,10 @@ fn bind() -> Option<UnixListener> {
             // A non-blocking connect probe tells us which: if we can connect,
             // another instance is running and we must not steal the socket.
             if std::os::unix::net::UnixStream::connect(&path).is_ok() {
-                log::warn!("ipc: another pigma instance already owns {}", path.display());
+                log::warn!(
+                    "ipc: another pigma instance already owns {}",
+                    path.display()
+                );
                 return None;
             }
             let _ = fs::remove_file(&path);
@@ -173,11 +255,13 @@ fn bind() -> Option<UnixListener> {
 
 /// Start the IPC server for the running TUI.
 ///
-/// Spawns a background task that accepts connections, answering `status`
-/// requests from `status_snapshot` and forwarding `msg` requests as `IpcEvent`s
-/// into `event_tx`. Returns a guard that removes the socket file on drop.
+/// Spawns a background task that accepts connections, answering `status` and
+/// `list` requests from `status_snapshot` / `queue_snapshot`, and forwarding
+/// `msg` requests as `IpcEvent`s into `event_tx`. Returns a guard that removes
+/// the socket file on drop.
 pub fn start_server(
     status_snapshot: Arc<Mutex<StatusSnapshot>>,
+    queue_snapshot: Arc<Mutex<QueueSnapshot>>,
     event_tx: mpsc::UnboundedSender<Event>,
 ) -> IpcServerGuard {
     let listener = match bind() {
@@ -190,9 +274,10 @@ pub fn start_server(
             match listener.accept().await {
                 Ok((stream, _)) => {
                     let snapshot = Arc::clone(&status_snapshot);
+                    let queue = Arc::clone(&queue_snapshot);
                     let tx = event_tx.clone();
                     tokio::spawn(async move {
-                        handle_connection(stream, snapshot, tx).await;
+                        handle_connection(stream, snapshot, queue, tx).await;
                     });
                 }
                 Err(e) => {
@@ -234,6 +319,7 @@ pub fn remove_socket() {
 async fn handle_connection(
     stream: UnixStream,
     snapshot: Arc<Mutex<StatusSnapshot>>,
+    queue: Arc<Mutex<QueueSnapshot>>,
     event_tx: mpsc::UnboundedSender<Event>,
 ) {
     let mut stream = BufReader::new(stream);
@@ -251,6 +337,10 @@ async fn handle_connection(
     let reply = match request {
         IpcRequest::Status => {
             let guard = snapshot.lock().unwrap();
+            serde_json::to_string(&*guard).unwrap_or_default()
+        }
+        IpcRequest::List => {
+            let guard = queue.lock().unwrap();
             serde_json::to_string(&*guard).unwrap_or_default()
         }
         IpcRequest::Msg { action } => {
@@ -292,6 +382,23 @@ pub async fn fetch_status() -> color_eyre::Result<StatusSnapshot> {
         .await
         .wrap_err("failed to read status response")?;
     serde_json::from_str(&buf).wrap_err("invalid status response")
+}
+
+/// Send a `list` request and return the live playback queue.
+pub async fn fetch_queue() -> color_eyre::Result<QueueSnapshot> {
+    let mut stream = connect().await?;
+    stream
+        .write_all(br#"{"cmd":"list"}"#)
+        .await
+        .wrap_err("failed to send list request")?;
+    stream.write_all(b"\n").await?;
+    let mut buf = String::new();
+    let mut reader = BufReader::new(stream);
+    reader
+        .read_line(&mut buf)
+        .await
+        .wrap_err("failed to read list response")?;
+    serde_json::from_str(&buf).wrap_err("invalid list response")
 }
 
 /// Send a `msg` action to the running TUI. Returns once the server confirms.
