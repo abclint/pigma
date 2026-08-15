@@ -72,7 +72,6 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      # 为容器内的 cargo 注入环境变量
       - name: Setup Cargo Env
         run: |
           mkdir -p .cargo
@@ -100,7 +99,6 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      # 为容器内的 cargo 注入环境变量
       - name: Setup Cargo Env
         run: |
           mkdir -p .cargo
@@ -128,7 +126,26 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      # 为容器内的 cargo 注入环境变量
+      - name: Install musl-tools and build ALSA locally
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools wget make sed
+          SYSROOT="/usr/local/x86_64-linux-musl"
+          sudo mkdir -p "$SYSROOT"
+          sudo chown -R $USER "$SYSROOT"
+          ALSA_VERSION="1.2.16.1"
+          ALSA_URL="https://www.alsa-project.org/files/pub/lib/alsa-lib-${ALSA_VERSION}.tar.bz2"
+          cd /tmp
+          wget -q "$ALSA_URL"
+          tar xf "alsa-lib-${ALSA_VERSION}.tar.bz2"
+          cd "alsa-lib-${ALSA_VERSION}"
+          export CC="musl-gcc"
+          export CFLAGS="-fPIC"
+          ./configure --host=x86_64-linux-musl --prefix="$SYSROOT/usr" --enable-static --disable-shared --disable-python --without-versioned
+          make -j"$(nproc)"
+          make install
+          sed -i '/Requires:/d' "$SYSROOT/usr/lib/pkgconfig/alsa.pc"
+
       - name: Setup Cargo Env
         run: |
           mkdir -p .cargo
@@ -144,6 +161,7 @@ jobs:
           target: x86_64-unknown-linux-musl
           command: build
           args: '--locked'
+
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
   test:
