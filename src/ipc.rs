@@ -42,7 +42,9 @@ pub enum IpcRequest {
     Status,
     /// Return the current playback queue (`pigma status -L`).
     List,
-    Msg { action: MsgAction },
+    Msg {
+        action: MsgAction,
+    },
 }
 
 /// A playback control action for `pigma msg`.
@@ -255,9 +257,7 @@ async fn client_connect(path: &Path) -> std::io::Result<ClientStream> {
     }
     #[cfg(windows)]
     {
-        tokio::net::windows::named_pipe::ClientOptions::new().open(
-            path.to_string_lossy().as_ref(),
-        )
+        tokio::net::windows::named_pipe::ClientOptions::new().open(path.to_string_lossy().as_ref())
     }
 }
 
@@ -308,9 +308,7 @@ impl IpcListener {
                 Err(e) => {
                     // Windows releases the pipe name when the owning process
                     // exits, so a failed bind always means a live instance.
-                    log::warn!(
-                        "ipc: another pigma instance already owns the pipe {name}: {e}"
-                    );
+                    log::warn!("ipc: another pigma instance already owns the pipe {name}: {e}");
                     None
                 }
             }

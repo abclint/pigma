@@ -13,10 +13,7 @@ fn tmp_socket(tag: &str) -> std::path::PathBuf {
     {
         // Named pipes live in a global namespace, so make the name unique per
         // test (parallel-safe) and per process.
-        std::path::PathBuf::from(format!(
-            r"\\.\pipe\pigma-test-{}-{tag}",
-            std::process::id()
-        ))
+        std::path::PathBuf::from(format!(r"\\.\pipe\pigma-test-{}-{tag}", std::process::id()))
     }
 }
 
@@ -36,8 +33,11 @@ async fn status_round_trip() {
     let snapshot = Arc::new(Mutex::new(snapshot));
 
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-    let _guard =
-        ipc::start_server(Arc::clone(&snapshot), Arc::new(Mutex::new(QueueSnapshot::default())), tx);
+    let _guard = ipc::start_server(
+        Arc::clone(&snapshot),
+        Arc::new(Mutex::new(QueueSnapshot::default())),
+        tx,
+    );
 
     // Give the server a moment to bind.
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
