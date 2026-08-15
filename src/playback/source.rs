@@ -10,7 +10,7 @@ use stream_download::storage::temp::TempStorageProvider;
 use stream_download::{Settings, StreamDownload, StreamPhase};
 use tokio::sync::mpsc;
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
 use super::engine::mem_rss_kb;
 use super::player::{AudioInput, AudioReader, SharedReader};
 use super::stream_client::HeadersClient;
