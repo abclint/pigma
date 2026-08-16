@@ -35,6 +35,7 @@ use crate::state::{
     SearchState, SplashState, State, TableMode,
 };
 use crate::ui;
+use crate::utils::path::expand_tilde;
 use crate::utils::{pigma_cache_dir, pigma_config_dir};
 
 use splash::send_event;
@@ -97,9 +98,9 @@ impl App {
         let save_on_play = config.cache.save_on_play;
 
         let cache_dir = {
-            let path = std::path::Path::new(&config.cache.cache_dir);
-            if path.is_absolute() {
-                std::path::PathBuf::from(&config.cache.cache_dir)
+            let expanded = expand_tilde(&config.cache.cache_dir);
+            if expanded.is_absolute() {
+                expanded
             } else {
                 pigma_cache_dir().join(&config.cache.cache_dir)
             }
@@ -286,7 +287,7 @@ impl App {
             IpcEvent::Mode => {
                 let mode = self.playback.cycle_mode();
                 let (_, label) = crate::playback::mode_icon(&mode);
-                self.toast(format!("🔄 播放模式: {label}"));
+                self.toast(format!("播放模式: {label}"));
             }
             IpcEvent::Like => {
                 if let Some(song) = self.playback.current_song() {
@@ -313,9 +314,9 @@ impl App {
             IpcEvent::SwitchList { endpoint, playlist } => {
                 let loaded = self.load_endpoint(&endpoint, playlist).await;
                 self.toast(if loaded {
-                    format!("🔀 已切换到: {endpoint}")
+                    format!("已切换到: {endpoint}")
                 } else {
-                    format!("🔀 切换失败: {endpoint}")
+                    format!("切换失败: {endpoint}")
                 });
             }
         }
