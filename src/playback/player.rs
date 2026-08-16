@@ -345,7 +345,9 @@ pub fn init_alsa_config_for_musl() {
     }
     let conf = dir.join("alsa.conf");
     if std::fs::write(&conf, ALSA_MINIMAL).is_ok() {
-        std::env::set_var("ALSA_CONFIG_DIR", &dir);
+        // Safe: called once at startup, before any audio thread is spawned that
+        // could read the environment concurrently.
+        unsafe { std::env::set_var("ALSA_CONFIG_DIR", &dir) };
         log::info!("musl: using bundled ALSA config at {:?}", dir);
     }
 }
