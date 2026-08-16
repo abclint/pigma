@@ -322,32 +322,3 @@ fn open_sink_impl(
         .map(|b| b.with_error_callback(stream_error_callback(event_tx)))
         .and_then(|b| b.open_sink_or_fallback())
 }
-
-/// On statically-linked musl builds, `libasound` is compiled with
-/// `--disable-shared`, so it cannot `dlopen` the system's PipeWire/PulseAudio
-/// ALSA plugins. The system default config (`type pipewire`) would therefore
-/// fail to load. To keep the binary runnable we write a minimal built-in-only
-/// ALSA config (plug/dmix, no external plugins) and point `ALSA_CONFIG_DIR` at
-/// it, so audio uses direct ALSA instead of trying to load external plugins.
-///
-/// GNU/glibc builds keep the system config (which routes through PipeWire), so
-/// this is a musl-only no-op elsewhere. Must run before the first audio device
-/// is opened (ALSA reads `ALSA_CONFIG_DIR` lazily at device-open time).
-#[cfg(all(target_os = "linux", target_env = "musl"))]
-pub fn init_alsa_config_for_musl() {
-    const ALSA_MINIMAL: &str = include_str!("alsa-minimal.conf");
-    if std::env::var("ALSA_CONFIG_DIR").is_ok() {
-        return; // explicit user override always wins
-    }
-    let dir = std::env::temp_dir().join("pigma-alsa");
-    if std::fs::create_dir_all(&dir).is_err() {
-        return;
-    }
-    let conf = dir.join("alsa.conf");
-    if std::fs::write(&conf, ALSA_MINIMAL).is_ok() {
-        // Safe: called once at startup, before any audio thread is spawned that
-        // could read the environment concurrently.
-        unsafe { std::env::set_var("ALSA_CONFIG_DIR", &dir) };
-        log::info!("musl: using bundled ALSA config at {:?}", dir);
-    }
-}

@@ -38,12 +38,6 @@ jobs:
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
             use-cross: true
-          - target: aarch64-unknown-linux-musl
-            os: ubuntu-latest
-            use-cross: true
-          - target: x86_64-unknown-linux-musl
-            os: ubuntu-latest
-            use-cross: true
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -78,26 +72,6 @@ jobs:
           [env]
           PKG_CONFIG_ALLOW_CROSS = "1"
           PKG_CONFIG_PATH = "/usr/lib/aarch64-linux-gnu/pkgconfig"
-          EOF
-
-      - name: Setup Cargo Env (aarch64 musl)
-        if: matrix.target == 'aarch64-unknown-linux-musl'
-        run: |
-          mkdir -p .cargo
-          cat <<EOF >> .cargo/config.toml
-          [env]
-          PKG_CONFIG_ALLOW_CROSS = "1"
-          PKG_CONFIG_PATH = "/usr/local/aarch64-linux-musl/usr/lib/pkgconfig"
-          EOF
-
-      - name: Setup Cargo Env (x86_64 musl)
-        if: matrix.target == 'x86_64-unknown-linux-musl'
-        run: |
-          mkdir -p .cargo
-          cat <<EOF >> .cargo/config.toml
-          [env]
-          PKG_CONFIG_ALLOW_CROSS = "1"
-          PKG_CONFIG_PATH = "/usr/local/x86_64-linux-musl/usr/lib/pkgconfig"
           EOF
 
       - name: Install cross
