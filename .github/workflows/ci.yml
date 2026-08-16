@@ -4,6 +4,7 @@ on:
   pull_request:
     paths-ignore:
       - 'README.md'
+      - 'CHANGELOG.md'
   push:
     branches:
       - main
@@ -12,6 +13,7 @@ on:
       - dev
     paths-ignore:
       - 'README.md'
+      - 'CHANGELOG.md'
 
 env:
   CARGO_TERM_COLOR: always
@@ -23,6 +25,7 @@ concurrency:
 jobs:
   fmt:
     name: fmt
+    if: ${{ !startsWith(github.event.head_commit.message, 'release') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -40,6 +43,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
   clippy:
     name: clippy
+    if: ${{ !startsWith(github.event.head_commit.message, 'release') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -65,6 +69,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
   build-aarch64:
     name: build linux/aarch64
+    if: ${{ !startsWith(github.event.head_commit.message, 'release') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -92,6 +97,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
   build-aarch64-musl:
     name: build linux/aarch64/musl
+    if: ${{ !startsWith(github.event.head_commit.message, 'release') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -119,6 +125,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
   build-x86_64-musl:
     name: build linux/x86_64/musl
+    if: ${{ !startsWith(github.event.head_commit.message, 'release') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -148,6 +155,7 @@ jobs:
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
   test:
+    if: ${{ !startsWith(github.event.head_commit.message, 'release') }}
     runs-on: ${{ matrix.os }}
     name: test ${{ matrix.os }}
     strategy:
