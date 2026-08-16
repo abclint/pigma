@@ -283,12 +283,13 @@ impl<'a> Widget for CornerBlock<'a> {
 
 // create block builder
 
-use ratatui::style::Style;
-use ratatui::widgets::{BorderType, Borders, Padding};
-
-use crate::config::{BorderConfig, Theme};
+use ratatui::{
+    style::Style,
+    widgets::{BorderType, Borders, Padding},
+};
 
 use super::styled_text;
+use crate::config::{BorderConfig, Theme};
 
 pub struct BlockStyle<'a> {
     pub colors: &'a Theme,

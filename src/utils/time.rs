@@ -1,6 +1,4 @@
-use time::OffsetDateTime;
-use time::format_description::FormatItem;
-use time::macros::format_description;
+use time::{OffsetDateTime, format_description::FormatItem, macros::format_description};
 
 /// `YYYY-MM-DD HH:MM:SS` in local timezone.
 pub fn local_timestamp() -> String {

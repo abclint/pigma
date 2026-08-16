@@ -1,15 +1,15 @@
-use ratatui::Frame;
-use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
-use ratatui::style::{Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::Paragraph;
-
-use super::BlockStyle;
-use super::block::CornerBlock;
-use crate::config::Theme;
-use crate::state::SearchState;
 use ncm_api::LoginInfo;
+use ratatui::{
+    Frame,
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    style::{Modifier, Style},
+    text::{Line, Span},
+    widgets::Paragraph,
+};
 use unicode_width::UnicodeWidthStr;
+
+use super::{BlockStyle, block::CornerBlock};
+use crate::{config::Theme, state::SearchState};
 
 pub(super) fn draw(
     f: &mut Frame,

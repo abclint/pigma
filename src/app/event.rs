@@ -3,14 +3,15 @@ use std::time::Duration;
 use crossterm::event::Event as CrosstermEvent;
 use tokio::time::sleep;
 
-use crate::event::{
-    AppEvent, AuthEvent, CommandEvent, CommandPanelAction, Event, NavigationEvent, PlaybackEvent,
-    SplashEvent,
-};
-use crate::input;
-use crate::state::CommandAction;
-
 use super::App;
+use crate::{
+    event::{
+        AppEvent, AuthEvent, CommandEvent, CommandPanelAction, Event, NavigationEvent,
+        PlaybackEvent, SplashEvent,
+    },
+    input,
+    state::CommandAction,
+};
 
 impl App {
     pub(super) async fn handle_events(&mut self) -> color_eyre::Result<()> {

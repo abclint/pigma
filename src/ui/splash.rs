@@ -7,9 +7,11 @@ use ratatui::{
 };
 
 use super::BlockStyle;
-use crate::config::Theme;
-use crate::layout::SplashLayout;
-use crate::state::{LogLevel, SplashState};
+use crate::{
+    config::Theme,
+    layout::SplashLayout,
+    state::{LogLevel, SplashState},
+};
 
 pub(super) const LOGO: &[&str] = &[
     "█▀▀▀▄ ▀█▀ ▄▀▀▀▀ █▄ ▄█ ▄▀▀▀▄",

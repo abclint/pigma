@@ -1,5 +1,4 @@
-use std::borrow::Cow;
-use std::ops::Range;
+use std::{borrow::Cow, ops::Range};
 
 use ncm_api::{SingerInfo, SongInfo, SongList, TopList};
 use ratatui::{
@@ -10,15 +9,12 @@ use ratatui::{
     widgets::{Cell, Paragraph, Row, TableState},
 };
 
-use super::BlockStyle;
-use super::scrollbar::calc_scroll_offset;
-use super::skeleton::Skeleton;
-use super::table;
-use crate::config::ColumnDef;
-use crate::config::ColumnsConfig;
-use crate::config::Theme;
-use crate::state::{ContentState, TableMode};
-use crate::utils::format_duration;
+use super::{BlockStyle, scrollbar::calc_scroll_offset, skeleton::Skeleton, table};
+use crate::{
+    config::{ColumnDef, ColumnsConfig, Theme},
+    state::{ContentState, TableMode},
+    utils::format_duration,
+};
 
 const MISSING: &str = "—";
 

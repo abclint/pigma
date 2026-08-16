@@ -1,6 +1,5 @@
-use crate::config::{Config, Theme, ThemeRegistry, theme_fallback};
-
 use super::App;
+use crate::config::{Config, Theme, ThemeRegistry, theme_fallback};
 
 impl App {
     /// Resolve the current theme: prefer `default_theme`, fall back to `default`

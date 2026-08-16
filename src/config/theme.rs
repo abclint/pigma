@@ -1,6 +1,4 @@
-use std::collections::HashMap;
-use std::str::FromStr;
-use std::sync::OnceLock;
+use std::{collections::HashMap, str::FromStr, sync::OnceLock};
 
 use ratatui::style::Color;
 use serde::{Deserialize, Serialize};

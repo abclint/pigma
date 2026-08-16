@@ -58,7 +58,7 @@ jobs:
         with:
           components: rustfmt
       - name: check formatting
-        run: cargo fmt -- --check
+        run: cargo +nightly fmt -- --check
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
   clippy:

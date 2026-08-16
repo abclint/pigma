@@ -6,9 +6,7 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use super::BlockStyle;
-use super::block::CornerBlock;
-use super::styled_text;
+use super::{BlockStyle, block::CornerBlock, styled_text};
 use crate::state::NavState;
 
 pub(super) fn render_breadcrumb(f: &mut Frame, nav: &NavState, bs: &BlockStyle<'_>, area: Rect) {

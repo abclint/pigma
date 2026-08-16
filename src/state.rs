@@ -9,6 +9,8 @@ pub mod navigation;
 pub mod search;
 pub mod splash;
 
+use std::time::Instant;
+
 pub use command::*;
 pub use content::*;
 pub use help::*;
@@ -17,13 +19,10 @@ pub use navigation::*;
 pub use search::*;
 pub use splash::*;
 
-use std::time::Instant;
-
+// --- Private Internal Imports ---
+use crate::{config::BorderConfig, event::EventHandler};
 use ratatui::layout::Rect;
 use serde::{Deserialize, Serialize};
-
-use crate::config::BorderConfig;
-use crate::event::EventHandler;
 
 /// Top-level screens the TUI can be on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

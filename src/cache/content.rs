@@ -1,12 +1,13 @@
-use std::fs;
-use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    fs,
+    path::PathBuf,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use serde::{Deserialize, Serialize};
 
-use crate::state::{ContentState, PaginationInfo};
-
 use super::CacheManager;
+use crate::state::{ContentState, PaginationInfo};
 
 #[derive(Serialize, Deserialize)]
 struct ContentCacheEntry {

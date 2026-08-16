@@ -1,5 +1,6 @@
-use crate::app::App;
 use crossterm::event::{KeyCode, KeyEvent, MouseEventKind};
+
+use crate::app::App;
 
 pub(super) fn handle_help_key(app: &mut App, key_event: KeyEvent) {
     match key_event.code {

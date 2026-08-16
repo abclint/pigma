@@ -1,16 +1,18 @@
-use std::fs::{self, File, OpenOptions};
-use std::io;
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    fs::{self, File, OpenOptions},
+    io,
+    path::PathBuf,
+    sync::{Arc, atomic::Ordering},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use ncm_api::SongInfo;
 use stream_download::storage::StorageProvider;
 
-use super::CacheManager;
-use super::index::{CacheEntry, CacheIndex};
-
+use super::{
+    CacheManager,
+    index::{CacheEntry, CacheIndex},
+};
 use crate::utils::sanitize_filename;
 
 impl CacheManager {

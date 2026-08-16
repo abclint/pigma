@@ -1,21 +1,24 @@
-use ratatui::Frame;
-use ratatui::layout::{Alignment, Constraint, Layout, Rect};
-use ratatui::style::{Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Cell, Paragraph, Row, Table};
-
+use ratatui::{
+    Frame,
+    layout::{Alignment, Constraint, Layout, Rect},
+    style::{Modifier, Style},
+    text::{Line, Span},
+    widgets::{Cell, Paragraph, Row, Table},
+};
 use unicode_width::UnicodeWidthStr;
 
-use super::BlockStyle;
-use super::block::CornerBlock;
-use super::navigation::keep_visible;
-
-use super::scrollbar::{calc_scroll_offset, render_scrollbar};
-use super::title::render_title;
-use crate::config::Theme;
-use crate::playback::PlaybackEngine;
-use crate::utils::format::clip_long_text;
-use crate::utils::format_duration_into;
+use super::{
+    BlockStyle,
+    block::CornerBlock,
+    navigation::keep_visible,
+    scrollbar::{calc_scroll_offset, render_scrollbar},
+    title::render_title,
+};
+use crate::{
+    config::Theme,
+    playback::PlaybackEngine,
+    utils::{format::clip_long_text, format_duration_into},
+};
 
 fn tab_style(colors: &Theme, selected: bool, playing: bool) -> Style {
     if !selected && !playing {

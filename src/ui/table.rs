@@ -7,9 +7,11 @@ use ratatui::{
 };
 
 use super::styled_text;
-use crate::config::Theme;
-use crate::state::TableMode;
-use crate::{config::ColumnDef, ui::scrollbar::render_scrollbar};
+use crate::{
+    config::{ColumnDef, Theme},
+    state::TableMode,
+    ui::scrollbar::render_scrollbar,
+};
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn render_table(

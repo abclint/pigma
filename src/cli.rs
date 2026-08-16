@@ -1,19 +1,21 @@
 //! CLI entry: `pigma status` / `pigma msg` / `pigma list` subcommands plus the
 //! argument parser. The TUI itself runs when no subcommand is given.
 
-use clap::builder::Styles;
-use clap::builder::styling::AnsiColor;
-use clap::{Parser, Subcommand};
+use std::{path::PathBuf, sync::Arc};
 
-use std::path::PathBuf;
-use std::sync::Arc;
+use clap::{
+    Parser, Subcommand,
+    builder::{Styles, styling::AnsiColor},
+};
 
-use crate::app::App;
-use crate::cli;
-use crate::config::Config;
-use crate::ipc::{self, MsgAction, StatusSnapshot};
-use crate::logger::init_logger;
-use crate::utils::format_duration;
+use crate::{
+    app::App,
+    cli,
+    config::Config,
+    ipc::{self, MsgAction, StatusSnapshot},
+    logger::init_logger,
+    utils::format_duration,
+};
 
 const STYLES: Styles = Styles::styled()
     .header(AnsiColor::Yellow.on_default().bold())

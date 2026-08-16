@@ -1,5 +1,4 @@
-use std::sync::mpsc;
-use std::time::Duration;
+use std::{sync::mpsc, time::Duration};
 
 use rodio::MixerDeviceSink;
 use tokio::sync::mpsc as tokio_mpsc;

@@ -22,17 +22,20 @@ mod title;
 mod toast;
 mod topbar;
 
-use std::sync::Arc;
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use ratatui::Frame;
 
-use crate::app::App;
-use crate::config::NavPosition;
-use crate::layout;
-use crate::state::Page;
-use crate::ui::block::{BlockStyle, CornerBlock};
-use crate::ui::title::render_title;
+use crate::{
+    app::App,
+    config::NavPosition,
+    layout,
+    state::Page,
+    ui::{
+        block::{BlockStyle, CornerBlock},
+        title::render_title,
+    },
+};
 
 pub fn draw(f: &mut Frame, app: &mut App) {
     let now = std::time::Instant::now();

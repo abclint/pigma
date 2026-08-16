@@ -1,14 +1,13 @@
 //! Centralized data-loading service (`ApiService`): resolves NetEase Cloud Music
 //! API endpoints (see [`ApiEndpoint`]), applies caching, and maps errors to events.
 
-use std::collections::HashMap;
-use std::path::Path;
-use std::sync::Arc;
+use std::{collections::HashMap, path::Path, sync::Arc};
 
-use crate::cache::CacheManager;
-use crate::playback::scan_local_music;
-use crate::playback::{LyricLine, parse_lyric_lines};
-use crate::state::{ContentState, HotSearchKeywords, PaginationInfo};
+use crate::{
+    cache::CacheManager,
+    playback::{LyricLine, parse_lyric_lines, scan_local_music},
+    state::{ContentState, HotSearchKeywords, PaginationInfo},
+};
 
 /// Navigation/content endpoints backed by the NetEase Cloud Music API.
 ///

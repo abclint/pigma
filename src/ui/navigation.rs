@@ -199,10 +199,10 @@ pub(super) fn keep_visible(
 
 #[cfg(test)]
 mod tests {
-    use super::keep_visible;
-    use super::styled_text;
-    use crate::config::Theme;
     use ratatui::style::Style;
+
+    use super::{keep_visible, styled_text};
+    use crate::config::Theme;
 
     #[test]
     fn unselected_item_tag_wins_over_muted_default() {

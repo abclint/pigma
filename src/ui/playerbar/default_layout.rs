@@ -1,13 +1,13 @@
-use ratatui::Frame;
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::{
+    Frame,
+    layout::{Constraint, Layout, Rect},
+};
 
-use crate::config::PlayerbarConfig;
-use crate::config::Theme;
-use crate::playback::PlaybackState;
-
-use super::LayoutArea;
-use super::Playerbar;
-use super::widgets;
+use super::{LayoutArea, Playerbar, widgets};
+use crate::{
+    config::{PlayerbarConfig, Theme},
+    playback::PlaybackState,
+};
 
 pub(super) struct DefaultLayout;
 

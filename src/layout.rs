@@ -3,8 +3,7 @@
 
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
 
-use crate::config::NavPosition;
-use crate::state::Page;
+use crate::{config::NavPosition, state::Page};
 
 pub struct SplashLayout {
     pub logo: Rect,

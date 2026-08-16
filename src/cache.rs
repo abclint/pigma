@@ -7,9 +7,13 @@ pub mod covers;
 pub mod index;
 pub mod lyrics;
 
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64};
-use std::sync::{Arc, RwLock};
+use std::{
+    path::PathBuf,
+    sync::{
+        Arc, RwLock,
+        atomic::{AtomicBool, AtomicU64},
+    },
+};
 
 use index::CacheIndex;
 

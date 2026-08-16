@@ -11,10 +11,13 @@ mod search;
 mod splash;
 mod table;
 
-use crate::app::App;
-use crate::event::{AppEvent, CommandEvent, CommandPanelAction, NavigationEvent};
-use crate::state::Page;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEventKind};
+
+use crate::{
+    app::App,
+    event::{AppEvent, CommandEvent, CommandPanelAction, NavigationEvent},
+    state::Page,
+};
 
 pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> color_eyre::Result<()> {
     if key_event.modifiers == KeyModifiers::CONTROL {

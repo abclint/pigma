@@ -1,10 +1,12 @@
 use std::path::PathBuf;
 
 use super::{App, send_event};
-use crate::event::{AppEvent, NavigationEvent, PlaybackEvent};
-use crate::playback::scan_local_music;
-use crate::service::ApiEndpoint;
-use crate::state::{ContentState, Page};
+use crate::{
+    event::{AppEvent, NavigationEvent, PlaybackEvent},
+    playback::scan_local_music,
+    service::ApiEndpoint,
+    state::{ContentState, Page},
+};
 
 impl App {
     /// Reload the content for the current navigation item.

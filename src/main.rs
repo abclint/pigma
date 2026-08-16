@@ -6,7 +6,6 @@ use std::io::stdout;
 
 use clap::Parser;
 use crossterm::execute;
-
 use pigma::cli::{Cli, run_cli};
 
 #[tokio::main]

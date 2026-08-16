@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
-
 use ncm_api::{SingerInfo, SongInfo, SongList, TopList};
+use serde::{Deserialize, Serialize};
 
 use crate::config::ContentType;
 

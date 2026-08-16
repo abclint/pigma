@@ -1,9 +1,12 @@
-use super::{App, send_event};
-use crate::event::{AuthEvent, PlaybackEvent};
-use crate::state::Page;
 use std::sync::Arc;
 
 use tokio::time::{Duration, sleep};
+
+use super::{App, send_event};
+use crate::{
+    event::{AuthEvent, PlaybackEvent},
+    state::Page,
+};
 
 impl App {
     pub(super) fn handle_login(&mut self) {

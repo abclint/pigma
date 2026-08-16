@@ -9,19 +9,18 @@ mod playerbar;
 pub mod theme;
 mod titles;
 
+use std::fs;
+
 pub use border::*;
 pub use cache::*;
 pub use column::*;
 pub use navigation::*;
 pub use playerbar::*;
+use serde::{Deserialize, Serialize};
 pub use theme::{Theme, ThemeRegistry, theme_fallback};
 pub use titles::*;
 
-use serde::{Deserialize, Serialize};
-use std::fs;
-
-use crate::utils::GradientPreset;
-use crate::{logger::Logger, utils};
+use crate::{logger::Logger, utils, utils::GradientPreset};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]

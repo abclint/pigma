@@ -1,22 +1,30 @@
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::{
+    collections::HashMap,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
+    time::Duration,
+};
 
 use ncm_api::{NcmError, SongInfo, SongQuality};
 use sonar::{PlayUrlResult, Quality, SearchQuery, SonarFinder, Song};
-use stream_download::http::HttpStream;
-use stream_download::storage::temp::TempStorageProvider;
-use stream_download::{Settings, StreamDownload, StreamPhase};
+use stream_download::{
+    Settings, StreamDownload, StreamPhase, http::HttpStream, storage::temp::TempStorageProvider,
+};
 use tokio::sync::mpsc;
 
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
 use super::engine::mem_rss_kb;
-use super::player::{AudioInput, AudioReader, SharedReader};
-use super::stream_client::HeadersClient;
-use crate::cache::CacheManager;
-use crate::event::{Event, PlaybackEvent};
-use crate::service::ApiService;
+use super::{
+    player::{AudioInput, AudioReader, SharedReader},
+    stream_client::HeadersClient,
+};
+use crate::{
+    cache::CacheManager,
+    event::{Event, PlaybackEvent},
+    service::ApiService,
+};
 
 /// Minimum bytes to pre-buffer before starting playback. Roughly ~12s of audio at 320kbps and
 /// ~32s at 128kbps, leaving headroom for streams that download slower than playback. Playback

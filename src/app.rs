@@ -10,35 +10,34 @@ mod search;
 mod splash;
 mod theme;
 
-use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    sync::{Arc, Mutex},
+    time::Instant,
+};
 
 use ncm_api::SongList;
-use ratatui::layout::Rect;
-use ratatui::widgets::TableState;
-use ratatui::{DefaultTerminal, Frame};
+use ratatui::{DefaultTerminal, Frame, layout::Rect, widgets::TableState};
 use ratatui_image::picker::Picker;
 use reqwest::Client;
 use sonar::{SonarFinder, Song};
-
-use crate::cache::CacheManager;
-use crate::config::{Config, ThemeRegistry};
-use crate::event::AuthEvent;
-use crate::event::EventHandler;
-use crate::ipc::{IpcEvent, QueueSnapshot, StatusSnapshot};
-use crate::playback::PlaybackEngine;
-use crate::service::{ApiEndpoint, ApiService};
-use crate::state::{
-    ContentState, HelpState, LoginState, NavState, NavigationState, Page, SearchProvider,
-    SearchState, SplashState, State, TableMode,
-};
-use crate::ui;
-use crate::utils::path::expand_tilde;
-use crate::utils::{pigma_cache_dir, pigma_config_dir};
-
 use splash::send_event;
+
+use crate::{
+    cache::CacheManager,
+    config::{Config, ThemeRegistry},
+    event::{AuthEvent, EventHandler},
+    ipc::{IpcEvent, QueueSnapshot, StatusSnapshot},
+    playback::PlaybackEngine,
+    service::{ApiEndpoint, ApiService},
+    state::{
+        ContentState, HelpState, LoginState, NavState, NavigationState, Page, SearchProvider,
+        SearchState, SplashState, State, TableMode,
+    },
+    ui,
+    utils::{path::expand_tilde, pigma_cache_dir, pigma_config_dir},
+};
 
 /// Main application state and entry point for the pigma TUI.
 pub struct App {
