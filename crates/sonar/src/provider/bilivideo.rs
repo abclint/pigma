@@ -74,9 +74,11 @@ impl BiliVideoProvider {
             let url = format!("https://api.bilibili.com{}?{}", path, query);
 
             let mut headers = HeaderMap::new();
-            let cookies = self.cookies.lock().await;
-            if !cookies.is_empty() {
-                headers.insert(COOKIE, HeaderValue::from_str(&cookies)?);
+            {
+                let cookies = self.cookies.lock().await;
+                if !cookies.is_empty() {
+                    headers.insert(COOKIE, HeaderValue::from_str(&cookies)?);
+                }
             }
             headers.insert(
                 REFERER,
@@ -87,7 +89,13 @@ impl BiliVideoProvider {
             let json: Value = resp.json().await?;
 
             let code = json["code"].as_i64().unwrap_or(-999);
-            if code == 0 {
+
+            // A non-zero `code` is an explicit failure. A `code == 0` with no
+            // `data` object is Bilibili's "hollow success" under risk control /
+            // flakiness (e.g. `{"code":0,"data":null}`): treat it as transient
+            // too, otherwise the caller fails to parse the missing payload.
+            let hollow = code == 0 && !json["data"].is_object();
+            if code == 0 && !hollow {
                 return Ok(json);
             }
 
@@ -97,11 +105,12 @@ impl BiliVideoProvider {
                 .to_string();
 
             // `-403` (stale/missing WBI signature) and `-412` (risk control)
-            // are often transient: invalidate the cached keys, refresh cookies,
-            // back off briefly and re-sign once.
-            if attempt == 0 && matches!(code, -403 | -412) {
+            // are often transient, as is a `code == 0` hollow payload. In all
+            // cases invalidate the cached keys, refresh cookies, back off
+            // briefly and re-sign once.
+            if attempt == 0 && (matches!(code, -403 | -412) || hollow) {
                 log::warn!(
-                    "bilivideo {} rejected (code={code}, {message}); refreshing keys/cookies and retrying",
+                    "bilivideo {} rejected/hollow (code={code}, {message}); refreshing keys/cookies and retrying",
                     path
                 );
                 invalidate_wbi_keys();
