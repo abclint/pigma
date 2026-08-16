@@ -54,7 +54,7 @@ jobs:
           submodules: recursive
           fetch-depth: 0
       - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@nightly
         with:
           components: rustfmt
       - name: check formatting
