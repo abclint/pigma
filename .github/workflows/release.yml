@@ -13,8 +13,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  release:
-    name: release ${{ matrix.target }}
+  build:
+    name: build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -101,10 +101,35 @@ jobs:
 
       - name: Package (windows)
         if: runner.os == 'Windows'
+        shell: bash
         run: |
           cd target/${{ matrix.target }}/release
           7z a ../../../pigma-${{ matrix.target }}.zip pigma.exe
           cd ..
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: pigma-${{ matrix.target }}
+          path: |
+            pigma-${{ matrix.target }}.tar.gz
+            pigma-${{ matrix.target }}.zip
+
+  release:
+    name: publish release
+    runs-on: ubuntu-latest
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: artifacts
 
       - name: Install git-cliff
         uses: taiki-e/install-action@v2
@@ -112,42 +137,17 @@ jobs:
           tool: git-cliff
 
       - name: Generate release notes
-        if: startsWith(github.ref, 'refs/tags/')
         run: |
           VERSION=${GITHUB_REF#refs/tags/}
-          git-cliff --unreleased --tag "$VERSION" -o /tmp/release-notes.md
+          git-cliff --latest --tag "$VERSION" -o release-notes.md
 
-      - name: Upload release tarball
+      - name: Upload release
         uses: softprops/action-gh-release@v3
-        if: startsWith(github.ref, 'refs/tags/') && runner.os != 'Windows'
         with:
-          files: pigma-${{ matrix.target }}.tar.gz
-          body_path: /tmp/release-notes.md
+          files: artifacts/pigma-*/pigma-*
+          body_path: release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload release zip
-        uses: softprops/action-gh-release@v3
-        if: startsWith(github.ref, 'refs/tags/') && runner.os == 'Windows'
-        with:
-          files: pigma-${{ matrix.target }}.zip
-          body_path: /tmp/release-notes.md
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload artifact (manual runs, unix)
-        uses: actions/upload-artifact@v7
-        if: ${{ !startsWith(github.ref, 'refs/tags/') && runner.os != 'Windows' }}
-        with:
-          name: pigma-${{ matrix.target }}
-          path: pigma-${{ matrix.target }}.tar.gz
-
-      - name: Upload artifact (manual runs, windows)
-        uses: actions/upload-artifact@v7
-        if: ${{ !startsWith(github.ref, 'refs/tags/') && runner.os == 'Windows' }}
-        with:
-          name: pigma-${{ matrix.target }}
-          path: pigma-${{ matrix.target }}.zip
   aur-release:
     name: Publish to AUR
     needs: release
