@@ -61,6 +61,9 @@ pub struct App {
     pub status: Arc<Mutex<StatusSnapshot>>,
     /// Live playback queue served to `pigma status -L` over the IPC socket.
     pub queue: Arc<Mutex<QueueSnapshot>>,
+    /// Last queue version the `queue` snapshot was built from; rebuilds only on
+    /// change instead of cloning the whole queue every event-loop iteration.
+    last_queue_version: u64,
 }
 
 impl App {
@@ -195,6 +198,9 @@ impl App {
             queued_playlists: HashSet::new(),
             status: Arc::new(Mutex::new(StatusSnapshot::default())),
             queue: Arc::new(Mutex::new(QueueSnapshot::default())),
+            // Force the first `update_status_snapshot` to populate the queue,
+            // e.g. when a session is restored from disk during engine startup.
+            last_queue_version: u64::MAX,
         })
     }
 
@@ -226,21 +232,27 @@ impl App {
         self.toast(format!("◧ 导航栏位置: {}", pos.label()));
     }
 
-    /// Refresh the IPC status snapshot from the live playback state.
-    fn update_status_snapshot(&self) {
+    /// Refresh the IPC status snapshot from the live playback state. The status
+    /// (current song + progress) is cheap and rebuilt each loop; the full queue
+    /// listing is only rebuilt when the queue actually changed.
+    fn update_status_snapshot(&mut self) {
         if let Ok(mut snapshot) = self.status.lock() {
             *snapshot = StatusSnapshot::from_playback(&self.playback.state);
         }
-        if let Ok(mut queue) = self.queue.lock() {
-            *queue = QueueSnapshot {
-                current_index: self.playback.queue_current_index(),
-                songs: self
-                    .playback
-                    .queue_songs()
-                    .iter()
-                    .map(|s| crate::ipc::QueueEntry::from_song(s))
-                    .collect(),
-            };
+        let version = self.playback.queue_version();
+        if version != self.last_queue_version {
+            self.last_queue_version = version;
+            if let Ok(mut queue) = self.queue.lock() {
+                *queue = QueueSnapshot {
+                    current_index: self.playback.queue_current_index(),
+                    songs: self
+                        .playback
+                        .queue_songs()
+                        .iter()
+                        .map(|s| crate::ipc::QueueEntry::from_song(s))
+                        .collect(),
+                };
+            }
         }
     }
 

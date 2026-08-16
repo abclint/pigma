@@ -13,6 +13,10 @@ pub struct PlaylistQueue {
     id_index: HashMap<u64, usize>,
     pub history: Vec<u64>,
     pub current_index: Option<usize>,
+    /// Monotonic counter bumped on every queue mutation. Consumers (e.g. the IPC
+    /// queue snapshot) use it to rebuild only when the queue actually changes
+    /// instead of cloning the whole list every frame.
+    version: u64,
 }
 
 impl PlaylistQueue {
@@ -22,7 +26,18 @@ impl PlaylistQueue {
             id_index: HashMap::new(),
             history: Vec::new(),
             current_index: None,
+            version: 0,
         }
+    }
+
+    pub(super) fn version(&self) -> u64 {
+        self.version
+    }
+
+    /// Mark the queue as changed. Used when callers mutate `current_index`
+    /// directly (outside the methods that bump automatically).
+    pub(super) fn bump(&mut self) {
+        self.version = self.version.wrapping_add(1);
     }
 
     pub(super) fn from_songs(songs: Vec<Arc<SongInfo>>, index: usize) -> Self {
@@ -31,6 +46,7 @@ impl PlaylistQueue {
             id_index: HashMap::new(),
             history: Vec::new(),
             current_index: Some(index),
+            version: 0,
         };
         q.rebuild_index();
         q
@@ -57,6 +73,7 @@ impl PlaylistQueue {
             id_index: HashMap::new(),
             history,
             current_index,
+            version: 0,
         };
         q.rebuild_index();
         q
@@ -66,6 +83,7 @@ impl PlaylistQueue {
     pub(super) fn set_songs(&mut self, songs: Vec<Arc<SongInfo>>) {
         self.songs = songs;
         self.rebuild_index();
+        self.bump();
     }
 
     pub(super) fn is_empty(&self) -> bool {
@@ -105,6 +123,7 @@ impl PlaylistQueue {
                 .map(Arc::clone),
         );
         self.rebuild_index();
+        self.bump();
         offset
     }
 
@@ -117,6 +136,7 @@ impl PlaylistQueue {
             self.songs.insert(insert_at + n, s);
         }
         self.rebuild_index();
+        self.bump();
         insert_at
     }
 
@@ -137,6 +157,7 @@ impl PlaylistQueue {
             self.push_to_history();
         }
         self.current_index = Some(index);
+        self.bump();
     }
 }
 

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -83,6 +83,8 @@ impl CacheManager {
             index: Arc::new(RwLock::new(index_file.songs)),
             max_cache_bytes: DEFAULT_MAX_CACHE_BYTES,
             cached_total_bytes: Arc::new(AtomicU64::new(total)),
+            index_dirty: Arc::new(AtomicBool::new(false)),
+            index_write_pending: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -111,14 +113,43 @@ impl CacheManager {
             .unwrap_or_default()
     }
 
-    /// Snapshot the index under a read lock, then serialize and write to disk
-    /// without holding any lock. Runs on a blocking task so a large index never
-    /// stalls the caller (e.g. the stream-completion callback).
+    /// Coalesced snapshot of the index to disk. Marks the index dirty and hands
+    /// off to a single in-flight writer loop: a burst of mutations (e.g. many
+    /// completed downloads) triggers only one write of the current state. Runs
+    /// on a blocking task so a large index never stalls the caller (e.g. the
+    /// stream-completion callback), and never drops a mutation: a writer loops
+    /// until the dirty flag is clear, handing the guard off to anyone who
+    /// mutates during the handoff window.
     pub(super) fn save_index(&self) {
+        self.index_dirty.store(true, Ordering::SeqCst);
+        if self.index_write_pending.swap(true, Ordering::SeqCst) {
+            // A writer loop already owns the flag and will drain the dirty bit.
+            return;
+        }
+
         let index = Arc::clone(&self.index);
         let downloads_dir = self.downloads_dir.clone();
+        let dirty = Arc::clone(&self.index_dirty);
+        let pending = Arc::clone(&self.index_write_pending);
         tokio::task::spawn_blocking(move || {
-            Self::write_index(&index, &downloads_dir);
+            'writer: loop {
+                Self::write_index(&index, &downloads_dir);
+                dirty.store(false, Ordering::SeqCst);
+                if dirty.swap(false, Ordering::SeqCst) {
+                    // A mutation landed while we were writing; write again.
+                    continue;
+                }
+                // Release the guard only after confirming no mutation sneaked in
+                // between the last dirty check and the release. If one did and it
+                // missed taking the guard, re-claim it and loop once more.
+                pending.store(false, Ordering::SeqCst);
+                if !dirty.load(Ordering::SeqCst) {
+                    break 'writer;
+                }
+                if pending.swap(true, Ordering::SeqCst) {
+                    break 'writer; // the mutator scheduled its own writer
+                }
+            }
         });
     }
 

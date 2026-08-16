@@ -245,45 +245,51 @@ impl CacheManager {
         if total_bytes <= self.max_cache_bytes {
             return 0;
         }
+        let need = total_bytes - self.max_cache_bytes;
 
-        // Under the write lock, only decide which entries to evict (IDs +
+        // Under the read lock, only decide the LRU candidate order (IDs +
         // filenames). All filesystem I/O happens after the lock is released so
         // concurrent readers are never blocked by disk operations.
-        let victims: Vec<(u64, String)> = {
-            let mut index = self.index.write().unwrap_or_else(|e| e.into_inner());
-            let total = self.cached_total_bytes.load(Ordering::Relaxed);
-            if total <= self.max_cache_bytes {
-                return 0;
-            }
-
-            let mut entries: Vec<(u64, u64)> =
+        let entries: Vec<(u64, String)> = {
+            let index = self.index.read().unwrap_or_else(|e| e.into_inner());
+            let mut by_age: Vec<(u64, u64)> =
                 index.iter().map(|(id, e)| (*id, e.accessed_at)).collect();
-            entries.sort_by_key(|e| e.1);
+            by_age.sort_by_key(|e| e.1);
+            by_age
+                .into_iter()
+                .filter_map(|(id, _)| index.get(&id).map(|e| (id, e.filename.clone())))
+                .collect()
+        };
 
-            let mut victims = Vec::new();
-            for (id, _) in &entries {
-                if let Some(entry) = index.get(id) {
-                    victims.push((*id, entry.filename.clone()));
-                }
+        // Evict only enough oldest entries to get under the limit — not the
+        // whole cache, which would force a full re-download of everything.
+        let mut freed = 0u64;
+        let mut victims: Vec<(u64, String)> = Vec::new();
+        for (id, filename) in entries {
+            if freed >= need {
+                break;
             }
+            let size = fs::metadata(self.downloads_dir.join(&filename))
+                .map(|m| m.len())
+                .unwrap_or(0);
+            freed += size;
+            victims.push((id, filename));
+        }
+        if victims.is_empty() {
+            return 0;
+        }
+
+        {
+            let mut index = self.index.write().unwrap_or_else(|e| e.into_inner());
             for (id, _) in &victims {
                 index.remove(id);
             }
-            victims
-        };
-
-        let mut freed = 0u64;
+        }
         for (_, filename) in &victims {
-            let path = self.downloads_dir.join(filename);
-            if let Ok(meta) = fs::metadata(&path) {
-                freed += meta.len();
-            }
-            let _ = fs::remove_file(path);
+            let _ = fs::remove_file(self.downloads_dir.join(filename));
         }
-        if !victims.is_empty() {
-            self.cached_total_bytes.fetch_sub(freed, Ordering::Relaxed);
-            log::info!("Evicted {} cached songs", victims.len());
-        }
+        self.cached_total_bytes.fetch_sub(freed, Ordering::Relaxed);
+        log::info!("Evicted {} cached songs", victims.len());
         victims.len()
     }
 }

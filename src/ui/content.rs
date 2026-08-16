@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::ops::Range;
 
 use ncm_api::{SingerInfo, SongInfo, SongList, TopList};
 use ratatui::{
@@ -10,6 +11,7 @@ use ratatui::{
 };
 
 use super::BlockStyle;
+use super::scrollbar::calc_scroll_offset;
 use super::skeleton::Skeleton;
 use super::table;
 use crate::config::ColumnDef;
@@ -105,15 +107,18 @@ fn build_content_rows<'a>(
     content: &'a ContentState,
     columns: &'a [ColumnDef],
     colors: &'a Theme,
+    range: Range<usize>,
 ) -> Vec<Row<'a>> {
     match content {
-        ContentState::Songs(songs) => build_rows(songs, columns, colors, |song, field| {
+        ContentState::Songs(songs) => build_rows(&songs[range], columns, colors, |song, field| {
             song_field(song, field)
         }),
-        ContentState::SongLists(lists) => build_rows(lists, columns, colors, songlist_field),
-        ContentState::TopLists(lists) => build_rows(lists, columns, colors, toplist_field),
+        ContentState::SongLists(lists) => {
+            build_rows(&lists[range], columns, colors, songlist_field)
+        }
+        ContentState::TopLists(lists) => build_rows(&lists[range], columns, colors, toplist_field),
         ContentState::HotSearch(keywords) => {
-            build_rows(&keywords.0, columns, colors, |kw, field| {
+            build_rows(&keywords.0[range], columns, colors, |kw, field| {
                 if field == "keyword" {
                     Some(Cow::Borrowed(kw.as_str()))
                 } else {
@@ -121,7 +126,9 @@ fn build_content_rows<'a>(
                 }
             })
         }
-        ContentState::Singers(singers) => build_rows(singers, columns, colors, singer_field),
+        ContentState::Singers(singers) => {
+            build_rows(&singers[range], columns, colors, singer_field)
+        }
         _ => vec![],
     }
 }
@@ -134,6 +141,7 @@ pub(super) fn render_content(
     api: Option<&str>,
     bs: &BlockStyle<'_>,
     table_state: &mut TableState,
+    content_selected: usize,
     table_mode: TableMode,
     area: Rect,
 ) {
@@ -155,8 +163,29 @@ pub(super) fn render_content(
         }
         _ => {
             let cols = columns.for_content(content.content_type(), api);
-            let rows = build_content_rows(content, cols, colors);
-            table::render_table(f, cols, rows, table_state, table_mode, colors, area);
+            let total = content.len();
+            let sel = content_selected.min(total.saturating_sub(1));
+            // Only materialize the visible window of rows (header takes one row)
+            // instead of rebuilding the whole list every frame.
+            let visible = area.height.saturating_sub(1).max(1) as usize;
+            let offset = calc_scroll_offset(sel, visible, total);
+            let end = (offset + visible).min(total);
+            let rows = build_content_rows(content, cols, colors, offset..end);
+            // The window is pre-scrolled, so selection and offset are relative to
+            // it; ratatui recomputes the offset from these during render.
+            table_state.select(Some(sel.saturating_sub(offset)));
+            *table_state.offset_mut() = 0;
+            table::render_table(
+                f,
+                cols,
+                rows,
+                table_state,
+                table_mode,
+                colors,
+                area,
+                total,
+                sel,
+            );
         }
     }
 }

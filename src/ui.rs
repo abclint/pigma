@@ -63,7 +63,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         }
         Page::Login => {
             let lay = layout::login(area);
-            login::draw(f, &app.state.login, &bs, &lay);
+            login::draw(f, &mut app.state.login, &bs, &lay);
         }
         page => {
             let lay = layout::build_layout(area, page, app.config.navigation_position);
@@ -170,6 +170,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                         api,
                         &bs,
                         &mut app.state.navigation.table_state,
+                        app.state.navigation.content_selected,
                         app.state.navigation.table_mode,
                         inner,
                     );
