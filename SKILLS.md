@@ -121,19 +121,22 @@ pigma msg toggle_like
 子命令底层就是往 socket/管道发一行 JSON、收一行 JSON（需换行结尾）。
 `msg` 成功回 `{"ok":true}`。可用 socat / PowerShell / 脚本直接控制。
 
+> `action` 是内部标签对象，必须写成 `{"cmd":"msg","action":{"action":...}}` 的嵌套形式
+> （即 `pigma msg` 实际发送的 JSON）；写成 `{"action":"play"}` 会被服务端丢弃。
+
 ```bash
 # 查询状态（回一行 JSON）
 printf '{"cmd":"status"}\n' | socat - "$HOME/.cache/pigma/pigma.sock"
 # 列出播放队列
 printf '{"cmd":"list"}\n' | socat - "$HOME/.cache/pigma/pigma.sock"
-# 播放控制
-printf '{"cmd":"msg","action":"next"}\n' | socat - "$HOME/.cache/pigma/pigma.sock"
-printf '{"cmd":"msg","action":"play"}\n' | socat - "$HOME/.cache/pigma/pigma.sock"
+# 播放控制（注意嵌套的 action 对象）
+printf '{"cmd":"msg","action":{"action":"next"}}\n' | socat - "$HOME/.cache/pigma/pigma.sock"
+printf '{"cmd":"msg","action":{"action":"play"}}\n' | socat - "$HOME/.cache/pigma/pigma.sock"
 # 音量：绝对（0.0-1.0）或相对增量
-printf '{"cmd":"msg","action":"volume","absolute":0.75}\n' | socat - "$HOME/.cache/pigma/pigma.sock"
-printf '{"cmd":"msg","action":"volume","delta":0.05}\n'    | socat - "$HOME/.cache/pigma/pigma.sock"
+printf '{"cmd":"msg","action":{"action":"volume","absolute":0.75}}\n' | socat - "$HOME/.cache/pigma/pigma.sock"
+printf '{"cmd":"msg","action":{"action":"volume","delta":0.05}}\n'    | socat - "$HOME/.cache/pigma/pigma.sock"
 # 切换队列（歌单端点可用 "playlist" 选第 N 个，1 起始）
-printf '{"cmd":"msg","action":"switch_list","endpoint":"toplist","playlist":2}\n' | socat - "$HOME/.cache/pigma/pigma.sock"
+printf '{"cmd":"msg","action":{"action":"switch_list","endpoint":"toplist","playlist":2}}\n' | socat - "$HOME/.cache/pigma/pigma.sock"
 ```
 
 Windows 命名管道协议相同，socket 路径可用 `--socket <pipe-name>` 自定义。
