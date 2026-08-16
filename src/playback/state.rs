@@ -1,11 +1,8 @@
-use std::sync::Arc;
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use ncm_api::SongInfo;
 
-use super::cover::CoverState;
-use super::lyrics::LyricLine;
-use super::mode::PlayMode;
+use super::{cover::CoverState, lyrics::LyricLine, mode::PlayMode};
 
 #[derive(Debug, Clone)]
 pub struct PlaybackState {

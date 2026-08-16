@@ -4,11 +4,12 @@ use ratatui_image::picker::Picker;
 use reqwest::Client;
 use sonar::SonarFinder;
 
-use crate::config::{Config, ProxyTarget, ThemeRegistry};
-use crate::state::{CommandAction, CommandItem, CommandPanel};
-use crate::utils::terminal::{ImageProtocol, best_image_protocol};
-
 use super::App;
+use crate::{
+    config::{Config, ProxyTarget, ThemeRegistry},
+    state::{CommandAction, CommandItem, CommandPanel},
+    utils::terminal::{ImageProtocol, best_image_protocol},
+};
 
 /// Used to decide whether a proxy is enabled based on `ProxyTarget`.
 pub(super) enum ProxyKind {

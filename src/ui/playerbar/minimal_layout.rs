@@ -1,16 +1,16 @@
-use ratatui::Frame;
-use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::Style;
-use ratatui::text::{Line, Span};
-use ratatui::widgets::Paragraph;
+use ratatui::{
+    Frame,
+    layout::{Constraint, Layout, Rect},
+    style::Style,
+    text::{Line, Span},
+    widgets::Paragraph,
+};
 
-use crate::config::PlayerbarConfig;
-use crate::config::Theme;
-use crate::playback::PlaybackState;
-
-use super::LayoutArea;
-use super::Playerbar;
-use super::widgets;
+use super::{LayoutArea, Playerbar, widgets};
+use crate::{
+    config::{PlayerbarConfig, Theme},
+    playback::PlaybackState,
+};
 
 pub(super) struct MinimalLayout;
 

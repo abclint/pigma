@@ -6,8 +6,7 @@ use ratatui::{
     widgets::{Clear, Paragraph},
 };
 
-use super::BlockStyle;
-use super::block::CornerBlock;
+use super::{BlockStyle, block::CornerBlock};
 use crate::app::App;
 
 const HELP_ITEMS: &[(&str, &str)] = &[

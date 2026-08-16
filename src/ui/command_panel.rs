@@ -8,10 +8,11 @@ use ratatui::{
     widgets::{Clear, Paragraph},
 };
 
-use super::BlockStyle;
-use super::block::CornerBlock;
-use crate::app::App;
-use crate::state::{CommandAction, CommandItem};
+use super::{BlockStyle, block::CornerBlock};
+use crate::{
+    app::App,
+    state::{CommandAction, CommandItem},
+};
 
 pub(super) fn draw(f: &mut Frame, app: &App, area: Rect) {
     let panel = &app.state.command_panel;

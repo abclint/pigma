@@ -1,17 +1,21 @@
-use crate::app::App;
-use crate::event::{AppEvent, CommandEvent, NavigationEvent, PlaybackEvent};
-use crate::playback::mode_icon;
-use crate::state::{ContentState, Page, TableMode};
-use crate::text_input::TextInput;
 use crossterm::event::{KeyCode, KeyEvent, MouseEventKind};
 
-use super::content::{
-    cell_enter_action, content_select_first, content_select_last, content_select_next,
-    content_select_prev, playlist_play_selected, playlist_select_first, playlist_select_last,
-    playlist_select_next, playlist_select_prev, row_enter_action,
+use super::{
+    content::{
+        cell_enter_action, content_select_first, content_select_last, content_select_next,
+        content_select_prev, playlist_play_selected, playlist_select_first, playlist_select_last,
+        playlist_select_next, playlist_select_prev, row_enter_action,
+    },
+    navigation::{navigate_nav_down, navigate_nav_up},
+    table::{cell_select_next_column, cell_select_prev_column, toggle_table_mode},
 };
-use super::navigation::{navigate_nav_down, navigate_nav_up};
-use super::table::{cell_select_next_column, cell_select_prev_column, toggle_table_mode};
+use crate::{
+    app::App,
+    event::{AppEvent, CommandEvent, NavigationEvent, PlaybackEvent},
+    playback::mode_icon,
+    state::{ContentState, Page, TableMode},
+    text_input::TextInput,
+};
 
 pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre::Result<()> {
     match key_event.code {

@@ -7,13 +7,12 @@ use ratatui::{
 };
 use ratatui_image::{Resize, StatefulImage};
 
-use crate::config::Theme;
-use crate::playback::PlaybackState;
-use crate::ui::gradient_line_gauge::GradientLineGauge;
-use crate::ui::spinner::Spinner;
-use crate::utils::format_duration_into;
-use crate::utils::time::format_duration;
-use crate::{config::PlayerbarConfig, playback::mode_icon};
+use crate::{
+    config::{PlayerbarConfig, Theme},
+    playback::{PlaybackState, mode_icon},
+    ui::{gradient_line_gauge::GradientLineGauge, spinner::Spinner},
+    utils::{format_duration_into, time::format_duration},
+};
 
 pub(super) fn draw_song_info(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
     if let Some(song) = &player.current_song {

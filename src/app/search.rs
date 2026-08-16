@@ -1,7 +1,9 @@
 use super::{App, send_event};
-use crate::event::NavigationEvent;
-use crate::state::{ContentState, SearchProvider};
-use crate::text_input::TextInput;
+use crate::{
+    event::NavigationEvent,
+    state::{ContentState, SearchProvider},
+    text_input::TextInput,
+};
 
 impl App {
     pub(super) fn handle_search_song(&mut self, keyword: String) {

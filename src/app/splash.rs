@@ -1,9 +1,9 @@
-use crate::state::LogLevel;
-
 use super::App;
-use crate::event::{Event, SplashEvent};
-use crate::state::SplashLogEntry;
-use crate::utils::clock_time;
+use crate::{
+    event::{Event, SplashEvent},
+    state::{LogLevel, SplashLogEntry},
+    utils::clock_time,
+};
 
 pub(super) fn send_event(tx: &tokio::sync::mpsc::UnboundedSender<Event>, event: Event) {
     if tx.send(event).is_err() {

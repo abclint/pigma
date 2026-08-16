@@ -1,7 +1,10 @@
-use crate::app::App;
-use crate::event::{AuthEvent, NavigationEvent};
-use crate::state::Page;
 use crossterm::event::{KeyCode, KeyEvent};
+
+use crate::{
+    app::App,
+    event::{AuthEvent, NavigationEvent},
+    state::Page,
+};
 
 pub(super) fn handle_login_key(app: &mut App, key_event: KeyEvent) -> bool {
     // Ctrl+C and Ctrl+P are handled globally in input.rs

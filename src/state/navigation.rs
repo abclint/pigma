@@ -1,18 +1,15 @@
-use std::cell::RefCell;
-use std::sync::Arc;
+use std::{cell::RefCell, sync::Arc};
 
 use ncm_api::LoginInfo;
 use ratatui::widgets::{ListState, TableState};
 
+use super::{
+    Page, PaginationInfo,
+    content::{ContentState, TableMode},
+    search::SearchState,
+};
 use crate::config::NavConfig;
-
-use super::Page;
-use super::PaginationInfo;
-use super::content::{ContentState, TableMode};
-use super::search::SearchState;
-
-pub use crate::config::NavItemConfig;
-pub use crate::config::NavSectionConfig as NavSection;
+pub use crate::config::{NavItemConfig, NavSectionConfig as NavSection};
 
 pub struct NavState {
     pub sections: Vec<NavSection>,

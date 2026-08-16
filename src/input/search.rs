@@ -1,7 +1,6 @@
-use crate::app::App;
-use crate::event::NavigationEvent;
-use crate::state::ContentState;
 use crossterm::event::{KeyCode, KeyEvent};
+
+use crate::{app::App, event::NavigationEvent, state::ContentState};
 
 pub(super) fn handle_search_key(app: &mut App, key_event: KeyEvent) -> bool {
     match key_event.code {

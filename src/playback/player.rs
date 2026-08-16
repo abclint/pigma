@@ -1,16 +1,16 @@
-use std::io::{Read, Seek, SeekFrom};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::{
+    io::{Read, Seek, SeekFrom},
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
-use rodio::Source;
-use rodio::mixer::Mixer;
+#[cfg(target_os = "linux")]
+use rodio::cpal::traits::{DeviceTrait, HostTrait};
+use rodio::{Source, mixer::Mixer};
 use tokio::sync::mpsc;
 
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
 use super::engine::mem_rss_kb;
-#[cfg(target_os = "linux")]
-use rodio::cpal::traits::{DeviceTrait, HostTrait};
-
 use crate::event::{Event, PlaybackEvent};
 
 pub trait AudioReader: Read + Seek + Send + Sync {}

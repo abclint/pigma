@@ -2,8 +2,7 @@
 //! main render loop (`Event`, `AppEvent`, `AuthEvent`, `PlaybackEvent`,
 //! `NavigationEvent`, ...).
 
-use std::sync::Arc;
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use color_eyre::eyre::OptionExt;
 use crossterm::event::Event as CrosstermEvent;
@@ -11,9 +10,11 @@ use futures::{FutureExt, StreamExt};
 use ncm_api::{LoginInfo, SongInfo};
 use tokio::sync::mpsc;
 
-use crate::ipc::IpcEvent;
-use crate::playback::LyricLine;
-use crate::state::{ContentState, Page, PaginationInfo, SplashLogEntry};
+use crate::{
+    ipc::IpcEvent,
+    playback::LyricLine,
+    state::{ContentState, Page, PaginationInfo, SplashLogEntry},
+};
 
 #[derive(Clone, Debug)]
 pub enum Event {

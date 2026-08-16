@@ -1,6 +1,8 @@
-use crate::app::App;
-use crate::event::{NavigationEvent, PlaybackEvent};
-use crate::state::ContentState;
+use crate::{
+    app::App,
+    event::{NavigationEvent, PlaybackEvent},
+    state::ContentState,
+};
 
 pub(super) fn content_item_count(app: &App) -> usize {
     app.state.navigation.content.len()

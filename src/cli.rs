@@ -1,15 +1,21 @@
 //! CLI entry: `pigma status` / `pigma msg` / `pigma list` subcommands plus the
 //! argument parser. The TUI itself runs when no subcommand is given.
 
-use clap::builder::Styles;
-use clap::builder::styling::AnsiColor;
-use clap::{Parser, Subcommand};
+use std::{path::PathBuf, sync::Arc};
 
-use std::path::PathBuf;
-use std::sync::Arc;
+use clap::{
+    Parser, Subcommand,
+    builder::{Styles, styling::AnsiColor},
+};
 
-use crate::config::Config;
-use crate::ipc::{self, MsgAction, StatusSnapshot};
+use crate::{
+    app::App,
+    cli,
+    config::Config,
+    ipc::{self, MsgAction, StatusSnapshot},
+    logger::init_logger,
+    utils::format_duration,
+};
 
 const STYLES: Styles = Styles::styled()
     .header(AnsiColor::Yellow.on_default().bold())
@@ -89,6 +95,10 @@ pub enum Command {
         socket: Option<PathBuf>,
     },
 }
+
+/* -------------------------------------------------------------------------- */
+/*                               command actions                              */
+/* -------------------------------------------------------------------------- */
 
 /// `pigma status` handler.
 pub async fn status(template: &str, json: bool, list: bool) -> color_eyre::Result<()> {
@@ -171,8 +181,8 @@ pub async fn list(endpoint: &str) -> color_eyre::Result<()> {
         std::process::exit(1);
     });
 
-    let (content, _) = service
-        .resolve_content(api_ep, uid, config.search_limit)
+    let content = service
+        .resolve_endpoint_content(api_ep, uid, config.search_limit)
         .await;
 
     match content {
@@ -301,10 +311,63 @@ fn format_status(template: &str, s: &StatusSnapshot) -> String {
         .replace("{liked}", if s.liked { "true" } else { "false" })
 }
 
-fn format_duration(ms: u64) -> String {
-    let total_secs = ms / 1000;
-    format!("{}:{:02}", total_secs / 60, total_secs % 60)
+pub async fn run_cli(mut cli: Cli) -> color_eyre::Result<Option<App>> {
+    let socket = match &cli.command {
+        Some(Command::Status {
+            socket: cmd_socket, ..
+        })
+        | Some(Command::Msg {
+            socket: cmd_socket, ..
+        }) => match cmd_socket {
+            Some(s) => Some(s.clone()),
+            None => cli.socket.take(),
+        },
+        _ => cli.socket.take(),
+    };
+    ipc::set_socket_path(socket);
+
+    match &cli.command {
+        Some(Command::Status {
+            template,
+            json,
+            list,
+            ..
+        }) => {
+            cli::status(template, *json, *list).await?;
+            return Ok(None);
+        }
+        Some(Command::Msg {
+            action,
+            value,
+            playlist,
+            ..
+        }) => {
+            cli::msg(action, value.as_deref(), *playlist).await?;
+            return Ok(None);
+        }
+        Some(Command::List { endpoint }) => {
+            cli::list(endpoint).await?;
+            return Ok(None);
+        }
+        None => {}
+    }
+
+    let config = Config::load();
+    init_logger(&config)?;
+
+    if let Some(endpoint) = cli.daemon {
+        App::new(config, false)?
+            .run_headless(&endpoint, cli.playlist)
+            .await?;
+        return Ok(None);
+    }
+
+    Ok(Some(App::new(config, true)?))
 }
+
+/* -------------------------------------------------------------------------- */
+/*                                   Testing                                  */
+/* -------------------------------------------------------------------------- */
 
 #[cfg(test)]
 mod tests {
@@ -332,7 +395,7 @@ mod tests {
             "{current}/{duration} {artist} {name} {volume}% {status}",
             &snapshot(),
         );
-        assert_eq!(out, "1:05/2:05 Example Artist Example Song 75% playing");
+        assert_eq!(out, "01:05/02:05 Example Artist Example Song 75% playing");
     }
 
     #[test]

@@ -1,13 +1,9 @@
-use std::fs;
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::{fs, path::PathBuf, sync::Arc};
 
 use ncm_api::SongInfo;
 use serde::{Deserialize, Serialize};
 
-use super::PlayMode;
-use super::{NCM_SEARCH_QUEUE_KEY, THIRD_PARTY_QUEUE_KEY};
-
+use super::{NCM_SEARCH_QUEUE_KEY, PlayMode, THIRD_PARTY_QUEUE_KEY};
 use crate::utils::sanitize_filename;
 
 /// File name for the unified NCM search queue.

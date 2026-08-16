@@ -1,10 +1,13 @@
 use std::sync::Arc;
 
-use super::{App, send_event};
-use crate::event::{NavigationEvent, PlaybackEvent};
-use crate::playback::{CoverState, NCM_SEARCH_QUEUE_KEY, THIRD_PARTY_QUEUE_KEY, parse_lyric_lines};
-use crate::state::{ContentState, PaginationInfo};
 use image::GenericImageView;
+
+use super::{App, send_event};
+use crate::{
+    event::{NavigationEvent, PlaybackEvent},
+    playback::{CoverState, NCM_SEARCH_QUEUE_KEY, THIRD_PARTY_QUEUE_KEY, parse_lyric_lines},
+    state::{ContentState, PaginationInfo},
+};
 
 impl App {
     pub(super) fn handle_content_loaded(&mut self, content: ContentState) {

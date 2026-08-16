@@ -1,8 +1,9 @@
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::Span;
+use ratatui::{
+    style::{Color, Modifier, Style},
+    text::Span,
+};
 
-use crate::config::Theme;
-use crate::utils::gradient_color;
+use crate::{config::Theme, utils::gradient_color};
 
 /// Parse `<tag>text</tag>` markup into styled `Vec<Span>`.
 ///

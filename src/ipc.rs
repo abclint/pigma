@@ -11,22 +11,27 @@
 //! `~/.cache/pigma/pigma.sock` on Linux/macOS, and a named pipe `\\.\pipe\pigma`
 //! on Windows. The endpoint is user-scoped so no authentication is needed.
 
-use std::cell::RefCell;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
-
 #[cfg(unix)]
 use std::fs;
+use std::{
+    cell::RefCell,
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex, OnceLock},
+};
 
 use color_eyre::eyre::{OptionExt, WrapErr};
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::sync::mpsc;
+use tokio::{
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    sync::mpsc,
+};
 
-use crate::event::{AppEvent, Event};
-use crate::playback::PlayMode;
 #[cfg(unix)]
 use crate::utils::pigma_cache_dir;
+use crate::{
+    event::{AppEvent, Event},
+    playback::PlayMode,
+};
 
 /// Socket file name inside `pigma_cache_dir()` (Unix only).
 pub const SOCKET_FILE: &str = "pigma.sock";

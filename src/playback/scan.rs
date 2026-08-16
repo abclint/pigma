@@ -1,6 +1,8 @@
-use std::fs;
-use std::hash::{Hash, Hasher};
-use std::io::BufReader;
+use std::{
+    fs,
+    hash::{Hash, Hasher},
+    io::BufReader,
+};
 
 use ncm_api::SongInfo;
 use rodio::Source;

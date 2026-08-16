@@ -1,17 +1,19 @@
 use std::cell::Cell;
 
-use ratatui::Frame;
-use ratatui::layout::{Alignment, Rect};
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Padding, Paragraph};
+use ratatui::{
+    Frame,
+    layout::{Alignment, Rect},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Padding, Paragraph},
+};
 
-use super::BlockStyle;
-use super::block::CornerBlock;
-use crate::config::Theme;
-use crate::playback::LyricLine;
-use crate::playback::PlaybackState;
-use crate::utils::GradientPreset;
+use super::{BlockStyle, block::CornerBlock};
+use crate::{
+    config::Theme,
+    playback::{LyricLine, PlaybackState},
+    utils::GradientPreset,
+};
 
 thread_local! {
     static LAST_CUR: Cell<usize> = const { Cell::new(0) };

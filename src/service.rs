@@ -1,13 +1,13 @@
 //! Centralized data-loading service (`ApiService`): resolves NetEase Cloud Music
 //! API endpoints (see [`ApiEndpoint`]), applies caching, and maps errors to events.
 
-use std::collections::HashMap;
-use std::path::Path;
-use std::sync::Arc;
+use std::{collections::HashMap, path::Path, sync::Arc};
 
-use crate::cache::CacheManager;
-use crate::playback::{LyricLine, parse_lyric_lines};
-use crate::state::{ContentState, HotSearchKeywords, PaginationInfo};
+use crate::{
+    cache::CacheManager,
+    playback::{LyricLine, parse_lyric_lines, scan_local_music},
+    state::{ContentState, HotSearchKeywords, PaginationInfo},
+};
 
 /// Navigation/content endpoints backed by the NetEase Cloud Music API.
 ///
@@ -189,6 +189,39 @@ impl ApiService {
             ApiEndpoint::Download | ApiEndpoint::LocalMusic => {
                 unreachable!("handled separately by caller")
             }
+        }
+    }
+
+    /// Resolve an endpoint into a displayable [`ContentState`], handling the local
+    /// sources (`Download` / `LocalMusic`) and `LikedSongs` that [`resolve_content`]
+    /// deliberately leaves to its caller. Shared by `App::load_endpoint` (which then
+    /// loads the resolved songs into the queue) and the CLI `list` command, so the
+    /// endpoint→content mapping lives in exactly one place.
+    pub async fn resolve_endpoint_content(
+        &self,
+        api: ApiEndpoint,
+        uid: Option<u64>,
+        limit: u16,
+    ) -> ContentState {
+        if api == ApiEndpoint::LikedSongs {
+            return match uid {
+                Some(uid) => self.load_liked_songs(uid, limit).await.0,
+                None => ContentState::Error("未登录".into()),
+            };
+        }
+        match api {
+            ApiEndpoint::Download => {
+                let songs = self.cache().list_cached_songs_async().await;
+                ContentState::Songs(songs.into_iter().map(std::sync::Arc::new).collect())
+            }
+            ApiEndpoint::LocalMusic => {
+                let music_dir = dirs::home_dir().unwrap_or_default().join("Music");
+                let songs = tokio::task::spawn_blocking(move || scan_local_music(&music_dir))
+                    .await
+                    .unwrap_or_default();
+                ContentState::Songs(songs.into_iter().map(std::sync::Arc::new).collect())
+            }
+            _ => self.resolve_content(api, uid, limit).await.0,
         }
     }
 

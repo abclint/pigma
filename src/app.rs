@@ -10,34 +10,34 @@ mod search;
 mod splash;
 mod theme;
 
-use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    sync::{Arc, Mutex},
+    time::Instant,
+};
 
 use ncm_api::SongList;
-use ratatui::layout::Rect;
-use ratatui::widgets::TableState;
-use ratatui::{DefaultTerminal, Frame};
+use ratatui::{DefaultTerminal, Frame, layout::Rect, widgets::TableState};
 use ratatui_image::picker::Picker;
 use reqwest::Client;
 use sonar::{SonarFinder, Song};
-
-use crate::cache::CacheManager;
-use crate::config::{Config, ThemeRegistry};
-use crate::event::AuthEvent;
-use crate::event::EventHandler;
-use crate::ipc::{IpcEvent, QueueSnapshot, StatusSnapshot};
-use crate::playback::{PlaybackEngine, scan_local_music};
-use crate::service::{ApiEndpoint, ApiService};
-use crate::state::{
-    ContentState, HelpState, LoginState, NavState, NavigationState, Page, SearchProvider,
-    SearchState, SplashState, State, TableMode,
-};
-use crate::ui;
-use crate::utils::{pigma_cache_dir, pigma_config_dir};
-
 use splash::send_event;
+
+use crate::{
+    cache::CacheManager,
+    config::{Config, ThemeRegistry},
+    event::{AuthEvent, EventHandler},
+    ipc::{IpcEvent, QueueSnapshot, StatusSnapshot},
+    playback::PlaybackEngine,
+    service::{ApiEndpoint, ApiService},
+    state::{
+        ContentState, HelpState, LoginState, NavState, NavigationState, Page, SearchProvider,
+        SearchState, SplashState, State, TableMode,
+    },
+    ui,
+    utils::{path::expand_tilde, pigma_cache_dir, pigma_config_dir},
+};
 
 /// Main application state and entry point for the pigma TUI.
 pub struct App {
@@ -97,9 +97,9 @@ impl App {
         let save_on_play = config.cache.save_on_play;
 
         let cache_dir = {
-            let path = std::path::Path::new(&config.cache.cache_dir);
-            if path.is_absolute() {
-                std::path::PathBuf::from(&config.cache.cache_dir)
+            let expanded = expand_tilde(&config.cache.cache_dir);
+            if expanded.is_absolute() {
+                expanded
             } else {
                 pigma_cache_dir().join(&config.cache.cache_dir)
             }
@@ -286,7 +286,7 @@ impl App {
             IpcEvent::Mode => {
                 let mode = self.playback.cycle_mode();
                 let (_, label) = crate::playback::mode_icon(&mode);
-                self.toast(format!("🔄 播放模式: {label}"));
+                self.toast(format!("播放模式: {label}"));
             }
             IpcEvent::Like => {
                 if let Some(song) = self.playback.current_song() {
@@ -313,9 +313,9 @@ impl App {
             IpcEvent::SwitchList { endpoint, playlist } => {
                 let loaded = self.load_endpoint(&endpoint, playlist).await;
                 self.toast(if loaded {
-                    format!("🔀 已切换到: {endpoint}")
+                    format!("已切换到: {endpoint}")
                 } else {
-                    format!("🔀 切换失败: {endpoint}")
+                    format!("切换失败: {endpoint}")
                 });
             }
         }
@@ -444,30 +444,10 @@ impl App {
     async fn load_endpoint(&mut self, api_str: &str, playlist_index: Option<usize>) -> bool {
         let api = ApiEndpoint::parse(api_str).unwrap_or(ApiEndpoint::RecommendSongs);
         let uid = self.state.navigation.user.as_ref().map(|u| u.uid);
-        let content = if api == ApiEndpoint::LikedSongs
-            && let Some(uid) = uid
-        {
-            let (state, _, _) = self
-                .service
-                .load_liked_songs(uid, self.config.search_limit)
-                .await;
-            state
-        } else if api == ApiEndpoint::Download {
-            let songs = self.service.cache().list_cached_songs_async().await;
-            ContentState::Songs(songs.into_iter().map(std::sync::Arc::new).collect())
-        } else if api == ApiEndpoint::LocalMusic {
-            let music_dir = dirs::home_dir().unwrap_or_default().join("Music");
-            let songs = tokio::task::spawn_blocking(move || scan_local_music(&music_dir))
-                .await
-                .unwrap_or_default();
-            ContentState::Songs(songs.into_iter().map(std::sync::Arc::new).collect())
-        } else {
-            let (state, _) = self
-                .service
-                .resolve_content(api, uid, self.config.search_limit)
-                .await;
-            state
-        };
+        let content = self
+            .service
+            .resolve_endpoint_content(api, uid, self.config.search_limit)
+            .await;
 
         // Playlist/toplist endpoints resolve to a *list* of playlists; pick one
         // (default first, or `--playlist N`) and load its songs.

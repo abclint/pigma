@@ -1,13 +1,14 @@
 //! Logging setup and the in-app log buffer/sink surfaced in the splash view.
 
+use std::{fs::OpenOptions, io::Write, sync::Mutex};
+
 use log::{Level, Log, Metadata, Record};
 use serde::{Deserialize, Serialize};
-use std::fs::OpenOptions;
-use std::io::Write;
-use std::sync::Mutex;
 
-use crate::config::Config;
-use crate::utils::{local_timestamp, pigma_config_dir};
+use crate::{
+    config::Config,
+    utils::{local_timestamp, pigma_config_dir},
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Logger {

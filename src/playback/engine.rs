@@ -1,22 +1,27 @@
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use std::time::Duration;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Duration,
+};
 
 use ncm_api::{SongInfo, SongQuality};
 use tokio::sync::mpsc;
 
-use crate::cache::CacheManager;
-use crate::event::{Event, PlaybackEvent};
-use crate::service::ApiService;
-use crate::utils::time::local_month_day;
-
-use super::controller::PlaybackHandle;
-use super::lyrics::LyricLine;
-use super::mode::{self, PlayMode, Strategy};
-use super::queue::PlaylistQueue;
-use super::source::AudioSource;
-use super::state::PlaybackState;
-use super::storage::PlaylistStorage;
+use super::{
+    controller::PlaybackHandle,
+    lyrics::LyricLine,
+    mode::{self, PlayMode, Strategy},
+    queue::PlaylistQueue,
+    source::AudioSource,
+    state::PlaybackState,
+    storage::PlaylistStorage,
+};
+use crate::{
+    cache::CacheManager,
+    event::{Event, PlaybackEvent},
+    service::ApiService,
+    utils::time::local_month_day,
+};
 
 /// Read the current RSS in KB from /proc/self/status.
 #[cfg(all(target_os = "linux", target_env = "gnu"))]

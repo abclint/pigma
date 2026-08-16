@@ -3,18 +3,18 @@ mod minimal_layout;
 mod modern_layout;
 mod widgets;
 
-use ratatui::Frame;
-use ratatui::layout::Rect;
-use ratatui::style::Style;
-use ratatui::widgets::{Padding, Paragraph};
+use ratatui::{
+    Frame,
+    layout::Rect,
+    style::Style,
+    widgets::{Padding, Paragraph},
+};
 
-use crate::config::LayoutType;
-use crate::config::PlayerbarConfig;
-use crate::config::Theme;
-use crate::playback::PlaybackState;
-
-use super::BlockStyle;
-use super::block::CornerBlock;
+use super::{BlockStyle, block::CornerBlock};
+use crate::{
+    config::{LayoutType, PlayerbarConfig, Theme},
+    playback::PlaybackState,
+};
 
 #[derive(Debug, Clone, Default)]
 pub(super) struct LayoutArea {

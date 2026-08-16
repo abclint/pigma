@@ -1,6 +1,9 @@
-use crate::app::App;
-use crate::event::{CommandEvent, CommandPanelAction};
 use crossterm::event::{KeyCode, KeyEvent, MouseEventKind};
+
+use crate::{
+    app::App,
+    event::{CommandEvent, CommandPanelAction},
+};
 
 pub(super) fn handle_command_key(app: &mut App, key_event: KeyEvent) {
     match key_event.code {
