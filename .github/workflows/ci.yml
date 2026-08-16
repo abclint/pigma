@@ -10,7 +10,6 @@ on:
       - main
       - master
       - develop
-      - dev
     paths-ignore:
       - 'README.md'
       - 'CHANGELOG.md'
@@ -116,67 +115,6 @@ jobs:
           target: aarch64-unknown-linux-gnu
           command: build
           args: '--locked'
-      - name: Cache Cargo dependencies
-        uses: Swatinem/rust-cache@v2
-  build-aarch64-musl:
-    name: build linux/aarch64/musl
-    needs: skip-check
-    if: needs.skip-check.outputs.skip == 'false'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          submodules: recursive
-          fetch-depth: 0
-
-      - name: Setup Cargo Env
-        run: |
-          mkdir -p .cargo
-          cat <<EOF >> .cargo/config.toml
-          [env]
-          PKG_CONFIG_ALLOW_CROSS = "1"
-          PKG_CONFIG_PATH = "/usr/local/aarch64-linux-musl/usr/lib/pkgconfig"
-          EOF
-
-      - name: Build for aarch64-unknown-linux-musl
-        uses: houseabsolute/actions-rust-cross@v0
-        with:
-          target: aarch64-unknown-linux-musl
-          command: build
-          args: '--locked'
-      - name: Cache Cargo dependencies
-        uses: Swatinem/rust-cache@v2
-  build-x86_64-musl:
-    name: build linux/x86_64/musl
-    needs: skip-check
-    if: needs.skip-check.outputs.skip == 'false'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          submodules: recursive
-          fetch-depth: 0
-
-      - name: Setup Cargo Env
-        run: |
-          mkdir -p .cargo
-          cat <<EOF >> .cargo/config.toml
-          [env]
-          PKG_CONFIG_ALLOW_CROSS = "1"
-          PKG_CONFIG_PATH = "/usr/local/x86_64-linux-musl/usr/lib/pkgconfig"
-          EOF
-
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install cross
-        run: cargo install cross --locked
-
-      - name: Build for x86_64-unknown-linux-musl
-        run: cross +stable build --locked --target x86_64-unknown-linux-musl
-
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
   test:
