@@ -1,3 +1,24 @@
+# Changelog
+
+## [0.2.10] - 2026-08-16
+
+### 🚀 Features
+
+- *(ci)* Build linux aarch64 and musl targets with cross in CI and release (akirco)
+- Add initial configuration for TOML format rules (akirco)
+
+### 🐛 Bug Fixes
+
+- *(manifest)* Flatten multi-line inline tables to single-line for strict TOML parsers (akirco)
+- Update JSON structure for playback control commands in documentation (akirco)
+
+### 🚜 Refactor
+
+- Refactor cache management and improve performance (akirco)
+
+### ⚙️ Miscellaneous Tasks
+
+- Trigger CI on dev branch pushes (akirco)
 ## [0.2.9] - 2026-08-15
 
 ### 🚀 Features
@@ -153,7 +174,7 @@
 ### 🐛 Bug Fixes
 
 - *(sonar)* Examples and new test for bibili search (akirco)
-- *(styled_text)* Styled_text is overrideden by default (akirco)
+- *(styled_text)* Styled_text is overrideded by default (akirco)
 
 ### 🚜 Refactor
 
@@ -174,23 +195,23 @@
 
 ### 🚀 Features
 
-- *(musicx)* 第三方多源搜索与歌词/封面 fallback (akirco)
-- *(musicx)* 歌词/封面加载与播放队列集成 (akirco)
-- *(input)* 搜索源切换与快捷键增强（Tab 切换源、g/G、S 喜欢当前播放） (akirco)
-- *(ui)* ? 帮助弹窗与代理配置支持 Normal/Reversed/Both (akirco)
-- *(layout)* 窄终端隐藏侧边栏与封面尺寸适配 (akirco)
-- *(theme)* 添加浅色主题与标题样式 (akirco)
-- *(playback)* 缓存完成更新进度条颜色与 musicx registry 持久化 (akirco)
-- *(musicx)* 注册 utils::musicx 模块 (akirco)
+- *(musicx)* Third-party multi-source search with lyrics/cover fallback (akirco)
+- *(musicx)* Lyrics/cover loading and playback queue integration (akirco)
+- *(input)* Search source switching and shortcut enhancements (Tab to switch source, g/G, S to like current playing) (akirco)
+- *(ui)* Help popup and proxy config support for Normal/Reversed/Both (akirco)
+- *(layout)* Hide sidebar and adapt cover size on narrow terminals (akirco)
+- *(theme)* Add light theme and title style (akirco)
+- *(playback)* Update progress bar color on cache completion and persist musicx registry (akirco)
+- *(musicx)* Register utils::musicx module (akirco)
 
 ### 🐛 Bug Fixes
 
-- *(playback)* B站流下载 403 与流下载代理支持 (akirco)
+- *(playback)* Bilibili stream download 403 and proxy support for stream downloads (akirco)
 - *(ncm-api)* Use device id and md5-hashed password in login (akirco)
 
 ### 🚜 Refactor
 
-- *(playback)* 移除 types.rs，类型并入 playback.rs (akirco)
+- *(playback)* Remove types.rs, merge types into playback.rs (akirco)
 - [**breaking**] Rename musicx crate to sonar (akirco)
 - *(core)* Migrate pigma to the sonar crate (akirco)
 
@@ -266,148 +287,162 @@
 ### 🚀 Features
 
 - *(navigation)* Add saved albums navigation tab (#18) (AshGrey🥕)
-- 迁移 API 到 service 调用，完善上传、本地音乐云盘及封面缓存，更新贡献指南 (akirco)
-- fixs: 缓存值`accessed_at`始终为0,快速导航时表格内容覆盖
+- Migrate API to service calls, improve uploads, local music cloud drive, and cover caching, update contribution guide (akirco)
+- fixs: cache value `accessed_at` always 0, table content overwritten during fast navigation (akirco)
 
 ## [0.1.4] - 2026-07-26
 
-### 新增
-- 每日推荐「不感兴趣」：按 `d` 键标记歌曲为不感兴趣，告诉算法不再推荐类似歌曲
-- 每日推荐「喜欢」：按 `s` 键将歌曲添加到我喜欢的音乐（所有歌曲页面可用）
-- 代理目标配置 `proxy_target`：支持 `yt`（代理 YouTube，默认）、`ncm`（代理网易云）、`both`（都代理）
+### Added
 
-### 变更
-- 性能优化：歌词逐字渐变渲染消除 per-char String 分配（零分配借用）
-- 性能优化：渐变预设从字符串 dispatch 改为枚举 match，消除每帧多次字符串比较
-- 性能优化：表格内容字段查询返回 `Cow` 避免 String clone
-- 性能优化：播放栏时间显示复用 `format_duration_into` buffer
-- 性能优化：缓存查找合并为单次 RwLock + 遍历（原来 4 次锁 + stat）
-- 性能优化：缓存总大小用 `AtomicU64` 追踪，evict 避免 O(n) stat 系统调用
-- 性能优化：evict 排序避免 filename clone
-- 性能优化：`collect_cached_songs` 移除冗余 `path.exists()` 检查
-- 性能优化：存储 IO（playlist 保存）通过 `spawn_blocking` 卸载到 blocking 线程
-- 本地音乐改为按需加载：切换导航时释放，切回时从磁盘缓存或重新扫描
-- 我喜欢的音乐：修复缓存写入缺失，现在首次加载后会写入磁盘缓存
-- 我喜欢的音乐：最新喜欢的歌曲显示在列表顶部（IDs reverse）
-- NCM 代理修复：`like` 接口参数修正（端点 `/api/radio/like`，参数 `trackId`/`alg`/`time`）
-- 每日推荐 dislike 接口修正为 `/api/v2/discovery/recommend/dislike`（参数 `resId`/`resType`/`sceneType`）
+- Daily recommendation "not interested": press `d` to mark a song as not interested, telling the algorithm not to recommend similar songs
+- Daily recommendation "like": press `s` to add a song to My Liked Music (available on all song pages)
+- Proxy target config `proxy_target`: supports `yt` (proxy YouTube, default), `ncm` (proxy NetEase Cloud Music), `both` (proxy both)
 
-### 移除
-- 播放上报功能（`report_play` API 调用及 `pending_report` 机制）
+### Changed
 
-### 修复
-- 修复 ratatui-image 加载专辑封面占用过大内存的问题（请求 NCM CDN 200x200 缩略图替代原图）
+- Perf: per-character gradient lyric rendering eliminates per-char String allocation (zero-allocation borrowing)
+- Perf: gradient preset changed from string dispatch to enum match, eliminating multiple string comparisons per frame
+- Perf: table field query returns `Cow` to avoid String clone
+- Perf: player bar time display reuses `format_duration_into` buffer
+- Perf: cache lookup merged into a single RwLock + iteration (was 4 locks + stat)
+- Perf: cache total size tracked via `AtomicU64`, evict avoids O(n) stat syscalls
+- Perf: evict sorting avoids filename clone
+- Perf: `collect_cached_songs` removes redundant `path.exists()` check
+- Perf: storage IO (playlist saving) offloaded to blocking thread via `spawn_blocking`
+- Local music now loads on demand: released when switching navigation, reloaded from disk cache or re-scanned when returning
+- My Liked Music: fixed missing cache write, now writes to disk cache after first load
+- My Liked Music: most recently liked songs shown at top of list (IDs reversed)
+- NCM proxy fix: corrected `like` endpoint params (endpoint `/api/radio/like`, params `trackId`/`alg`/`time`)
+- Daily recommendation dislike endpoint corrected to `/api/v2/discovery/recommend/dislike` (params `resId`/`resType`/`sceneType`)
+
+### Removed
+
+- Playback reporting feature (`report_play` API call and `pending_report` mechanism)
+
+### Fixed
+
+- Fixed ratatui-image loading album covers using excessive memory (request 200x200 thumbnail from NCM CDN instead of original image)
 
 ## [0.1.3] - 2026-07-25
 
-### 新增
-- 专辑封面显示：基于 `ratatui-image` 实现终端内专辑封面渲染，自动裁切为圆形
-- 播放栏多布局支持：`default`、`modern`、`minimal` 三种布局，通过 `playerbar.layout` 配置
-- 播放栏组件可见性配置：`playerbar.visible` 支持独立控制封面、音量、播放模式、加载动画的显示
-- 边框渐变动画：`border_gradient` 和 `border_gradient_speed` 配置项，支持顺时针流动渐变效果
-- 配置文件示例：新增 `config.example.toml`，包含所有配置项的完整说明
-- 集中式 API 服务层（`service.rs`）：统一封装端点解析、缓存集成和错误映射
-- 本地音乐递归扫描：自动扫描子目录中的音频文件
-- 搜索结果数量限制：新增 `search_limit` 配置项
-- 缓存自动淘汰：基于 LRU 策略自动清理超过 2GB 的缓存，支持 stale 条目清理
+### Added
 
-### 变更
-- 重构所有 API 调用从 `self.api` 迁移至 `self.service.client()`，解耦业务层与 API 层
-- 播放栏拆分为多模块结构（`widgets`、`build_layout`、`default_layout`、`modern_layout`、`minimal_layout`）
-- 缓存索引锁从 `Mutex` 升级为 `RwLock`，提升并发读性能
-- NCM 网络重试次数从 3 次降为 2 次，更快回退到 YouTube 音源
-- buffer underrun/overrun 错误静默忽略，rodio 会自动恢复
-- `PlaybackEngine::new` 直接接收 `CacheManager` 而非分散的路径/模板参数
-- 移除 `Cargo.toml` 中已注释的 dev-dependencies
+- Album cover display: terminal album cover rendering via `ratatui-image`, auto-cropped to circle
+- Multiple player bar layouts: `default`, `modern`, `minimal`, configurable via `playerbar.layout`
+- Player bar component visibility config: `playerbar.visible` independently controls cover, volume, play mode, and loading animation
+- Border gradient animation: `border_gradient` and `border_gradient_speed` options with clockwise flowing gradient effect
+- Config example: new `config.example.toml` with complete documentation of all options
+- Centralized API service layer (`service.rs`): unified endpoint resolution, cache integration, and error mapping
+- Recursive local music scan: automatically scans audio files in subdirectories
+- Search result limit: new `search_limit` config option
+- Automatic cache eviction: LRU-based auto cleanup of cache over 2GB, with stale entry cleanup
 
-### 修复
-- 修复缓存索引可能包含未完成下载条目的问题（改为下载完成后才写入索引）
-- 修复文件已删除但缓存索引未清理导致的 stale 条目（退出时自动清理）
-- 修复本地音乐扫描遗漏子目录音频文件的问题
+### Changed
+
+- Refactored all API calls from `self.api` to `self.service.client()`, decoupling business layer from API layer
+- Player bar split into multi-module structure (`widgets`, `build_layout`, `default_layout`, `modern_layout`, `minimal_layout`)
+- Cache index lock upgraded from `Mutex` to `RwLock` for better concurrent read performance
+- NCM network retries reduced from 3 to 2 for faster fallback to YouTube source
+- buffer underrun/overrun errors silently ignored, rodio auto-recovers
+- `PlaybackEngine::new` now takes `CacheManager` directly instead of scattered path/template params
+- Removed commented-out dev-dependencies in `Cargo.toml`
+
+### Fixed
+
+- Fixed cache index potentially containing incomplete download entries (now written only after download completes)
+- Fixed stale entries from deleted files not cleaned in cache index (auto-cleaned on exit)
+- Fixed local music scan missing audio files in subdirectories
 
 ## [0.1.2] - 2026-07-23
 
-### 新增
-- 渐变进度条（GradientLineGauge），支持 colorgrad 预设主题
-- 边框配置 `BorderConfig`，支持 `rounded` 和 `follow_corner_color` 选项
-- 播放器进度条新增渐变色配置：`gradient_enabled` 和 `gradient_preset`
-- 缓存索引存储歌曲时长，避免播放列表加载时解码音频文件
-- 异步缓存方法：`load_lyrics_cache_async`、`list_cached_songs_async`
-- YouTube 搜索辅助模块（`utils/youtube.rs`），含繁简中文归一化和改进的匹配评分
+### Added
 
-### 变更
-- 重构事件系统：`AppEvent` 拆分为 `SplashEvent`、`AuthEvent`、`PlaybackEvent`、`NavigationEvent`、`CommandEvent` 五个领域子事件
-- 统一播放策略为单一 `Strategy` 枚举，移除 `Box<dyn PlayStrategy>` 动态分派
-- 播放器 `player::run` 返回 oneshot 完成信号，确保上一曲的 decoder/sink/StreamDownload 完全释放后再启动下一曲
-- YouTube 搜索工具函数从 `AudioSource` 提取至独立模块
-- 移除 examples 目录下的示例文件和 dev-dependencies
-- 添加 `rustfmt.toml` 统一代码格式
+- Gradient progress bar (GradientLineGauge) with colorgrad preset themes
+- Border config `BorderConfig` with `rounded` and `follow_corner_color` options
+- Player progress bar gradient config: `gradient_enabled` and `gradient_preset`
+- Cache index stores song duration to avoid decoding audio on playlist load
+- Async cache methods: `load_lyrics_cache_async`, `list_cached_songs_async`
+- YouTube search helper module (`utils/youtube.rs`) with traditional/simplified Chinese normalization and improved match scoring
 
-### 修复
-- 修复切换歌曲时旧播放器资源（HTTP 连接、缓冲区）未及时释放导致的资源泄漏
-- 修复缓存索引反序列化兼容旧格式（纯字符串 → 新对象格式平滑迁移）
+### Changed
+
+- Refactored event system: `AppEvent` split into five domain sub-events `SplashEvent`, `AuthEvent`, `PlaybackEvent`, `NavigationEvent`, `CommandEvent`
+- Unified playback strategy into a single `Strategy` enum, removed `Box<dyn PlayStrategy>` dynamic dispatch
+- Player `player::run` returns a oneshot completion signal, ensuring previous track's decoder/sink/StreamDownload fully released before next starts
+- YouTube search helpers extracted from `AudioSource` into a separate module
+- Removed example files in examples dir and dev-dependencies
+- Added `rustfmt.toml` for unified code formatting
+
+### Fixed
+
+- Fixed resource leak from old player resources (HTTP connections, buffers) not released promptly on track switch
+- Fixed cache index deserialization compat with old format (plain string → new object format smooth migration)
 
 ## [0.1.1] - 2026-07-21
 
-### 新增
-- 通过 y7dl 子模块支持 YouTube 回退播放
-- 用户创建歌单 API（`user_created_playlist`）
-- 用户收藏歌单 API（`user_collected_playlist`）
-- `SongList` 模型新增 `subscribed` 字段
-- 导航新增「我创建的歌单」和「我收藏的歌单」端点
-- 缓存管理器支持索引化缓存和自定义文件名模板
-- 新增缓存配置选项：`cache_dir`、`quality`、`cache_template`
-- 历史队列限制为最多 200 首
-- 心动模式限制为最多 500 首，并自动裁剪队列
-- 播放时自动选中内容列表中的当前歌曲
-- 喜欢的音乐自动设置歌单 ID 以支持心动模式
+### Added
 
-### 变更
-- 重构缓存管理器，使用 `cache_index.json` 索引化缓存
-- 将「我的歌单」拆分为「我创建的歌单」和「我收藏的歌单」
-- 改进音频质量选择，支持配置 `SongQuality`
-- 增强心动模式日志和错误处理
-- 修复本地文件播放问题，改进本地音乐扫描，使用路径生成唯一 ID
+- YouTube fallback playback via y7dl submodule
+- User-created playlist API (`user_created_playlist`)
+- User-collected playlist API (`user_collected_playlist`)
+- `SongList` model adds `subscribed` field
+- Navigation adds "My Created Playlists" and "My Collected Playlists" endpoints
+- Cache manager supports indexed cache and custom filename templates
+- New cache config options: `cache_dir`, `quality`, `cache_template`
+- History queue limited to max 200 songs
+- Heartbeat mode limited to max 500 songs with auto queue trimming
+- Auto-select current song in content list during playback
+- Liked Music auto-sets playlist ID to support Heartbeat mode
 
-### 修复
-- 修复下载音乐时长显示 00:00 的问题（从音频文件读取实际时长）
+### Changed
 
-### 文档
-- 更新许可证信息为 Apache-2.0 并添加使用说明
-- 添加 Windows Scoop 安装说明
+- Refactored cache manager to use `cache_index.json` indexed cache
+- Split "My Playlists" into "My Created Playlists" and "My Collected Playlists"
+- Improved audio quality selection with configurable `SongQuality`
+- Enhanced Heartbeat mode logging and error handling
+- Fixed local file playback, improved local music scan using path-based unique IDs
+
+### Fixed
+
+- Fixed downloaded music showing 00:00 duration (reads actual duration from audio file)
+
+### Documentation
+
+- Updated license info to Apache-2.0 and added usage notes
+- Added Windows Scoop installation instructions
 
 ## [0.1.0] - 2026-07-20
 
-### 新增
-- Pigma 首次发布 - 终端音乐播放器
-- 播放引擎，支持多种音频格式（MP3、FLAC、WAV、OGG、AAC、M4A、WMA）
-- 集成网易云音乐 API 进行流媒体播放
-- 本地音乐扫描和播放
-- 播放列表管理，支持自动保存/恢复
-- 多种播放模式：顺序、单曲循环、列表循环、随机、心动
-- 音量控制和进度拖动
-- 歌词显示和翻译支持
-- UI 样式文本渲染
-- UI 渐变色主题支持
-- 已下载/缓存歌曲管理
-- 搜索功能
-- 键盘快捷键导航
-- 播放队列管理
-- 歌手和专辑浏览
-- 排行榜浏览
-- 二维码登录
+### Added
 
-### 变更
-- 重构 UI 和工具模块以提升性能和组织性
-- 重构播放模块和 UI 组件
-- 改进代码可读性和模块组织
-- CI 工作流添加 Linux 音频依赖安装
-- 重构日志初始化并增强播放功能
+- Pigma initial release - terminal music player
+- Playback engine supporting multiple audio formats (MP3, FLAC, WAV, OGG, AAC, M4A, WMA)
+- NetEase Cloud Music API integration for streaming playback
+- Local music scanning and playback
+- Playlist management with auto save/restore
+- Multiple play modes: sequential, single loop, list loop, random, heartbeat
+- Volume control and progress seeking
+- Lyrics display and translation support
+- UI styled text rendering
+- UI gradient theme support
+- Downloaded/cached song management
+- Search functionality
+- Keyboard shortcut navigation
+- Playback queue management
+- Artist and album browsing
+- Charts browsing
+- QR code login
 
-### 修复
-- 简化稳定版构建的发布目标
-- 修复发布工作流依赖和制品上传
-- 运行 cargo fmt 统一代码风格
+### Changed
 
+- Refactored UI and utility modules for better performance and organization
+- Refactored playback module and UI components
+- Improved code readability and module organization
+- CI workflow adds Linux audio dependency installation
+- Refactored log initialization and enhanced playback features
 
+### Fixed
 
+- Simplified release targets for stable builds
+- Fixed release workflow dependencies and artifact upload
+- Ran cargo fmt to unify code style

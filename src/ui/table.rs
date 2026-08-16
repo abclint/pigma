@@ -11,6 +11,7 @@ use crate::config::Theme;
 use crate::state::TableMode;
 use crate::{config::ColumnDef, ui::scrollbar::render_scrollbar};
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn render_table(
     f: &mut Frame,
     headers: &[ColumnDef],
@@ -19,8 +20,9 @@ pub(super) fn render_table(
     table_mode: TableMode,
     colors: &Theme,
     area: Rect,
+    row_count: usize,
+    sel: usize,
 ) {
-    let row_count = rows.len();
     if row_count == 0 || headers.is_empty() {
         return;
     }
@@ -40,8 +42,6 @@ pub(super) fn render_table(
         .height(1);
 
     let widths: Vec<Constraint> = headers.iter().map(|h| h.to_constraint()).collect();
-
-    let sel = table_state.selected().unwrap_or(0);
 
     let table = Table::new(rows, widths).header(header).column_spacing(2);
 

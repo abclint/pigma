@@ -227,22 +227,22 @@ printf '{"cmd":"status"}\n' | socat - "$HOME/.cache/pigma/pigma.sock"
 # 列出播放队列
 printf '{"cmd":"list"}\n' | socat - "$HOME/.cache/pigma/pigma.sock"
 
-# 播放控制
-printf '{"cmd":"msg","action":"next"}\n'      | socat - "$HOME/.cache/pigma/pigma.sock"
-printf '{"cmd":"msg","action":"previous"}\n'  | socat - "$HOME/.cache/pigma/pigma.sock"
-printf '{"cmd":"msg","action":"pause"}\n'     | socat - "$HOME/.cache/pigma/pigma.sock"
-printf '{"cmd":"msg","action":"play"}\n'      | socat - "$HOME/.cache/pigma/pigma.sock"
-printf '{"cmd":"msg","action":"mode"}\n'      | socat - "$HOME/.cache/pigma/pigma.sock"
-printf '{"cmd":"msg","action":"like"}\n'      | socat - "$HOME/.cache/pigma/pigma.sock"
-printf '{"cmd":"msg","action":"dislike"}\n'   | socat - "$HOME/.cache/pigma/pigma.sock"
-printf '{"cmd":"msg","action":"toggle_like"}\n' | socat - "$HOME/.cache/pigma/pigma.sock"
+# 播放控制（注意 action 是嵌套对象，与 pigma msg 实际发送的 JSON 一致）
+printf '{"cmd":"msg","action":{"action":"next"}}\n'          | socat - "$HOME/.cache/pigma/pigma.sock"
+printf '{"cmd":"msg","action":{"action":"previous"}}\n'      | socat - "$HOME/.cache/pigma/pigma.sock"
+printf '{"cmd":"msg","action":{"action":"pause"}}\n'         | socat - "$HOME/.cache/pigma/pigma.sock"
+printf '{"cmd":"msg","action":{"action":"play"}}\n'          | socat - "$HOME/.cache/pigma/pigma.sock"
+printf '{"cmd":"msg","action":{"action":"mode"}}\n'          | socat - "$HOME/.cache/pigma/pigma.sock"
+printf '{"cmd":"msg","action":{"action":"like"}}\n'          | socat - "$HOME/.cache/pigma/pigma.sock"
+printf '{"cmd":"msg","action":{"action":"dislike"}}\n'       | socat - "$HOME/.cache/pigma/pigma.sock"
+printf '{"cmd":"msg","action":{"action":"toggle_like"}}\n'   | socat - "$HOME/.cache/pigma/pigma.sock"
 
 # 音量：绝对（0.0-1.0）或相对增量
-printf '{"cmd":"msg","action":"volume","absolute":0.75}\n' | socat - "$HOME/.cache/pigma/pigma.sock"
-printf '{"cmd":"msg","action":"volume","delta":0.05}\n'    | socat - "$HOME/.cache/pigma/pigma.sock"
+printf '{"cmd":"msg","action":{"action":"volume","absolute":0.75}}\n' | socat - "$HOME/.cache/pigma/pigma.sock"
+printf '{"cmd":"msg","action":{"action":"volume","delta":0.05}}\n'    | socat - "$HOME/.cache/pigma/pigma.sock"
 
 # 切换队列到指定端点（歌单端点可用 "playlist" 选第 N 个，1 起始）
-printf '{"cmd":"msg","action":"switch_list","endpoint":"toplist","playlist":2}\n' | socat - "$HOME/.cache/pigma/pigma.sock"
+printf '{"cmd":"msg","action":{"action":"switch_list","endpoint":"toplist","playlist":2}}\n' | socat - "$HOME/.cache/pigma/pigma.sock"
 ```
 
 约定：每行请求须以换行结尾，服务端每连接处理一个请求并回一行 JSON
@@ -266,8 +266,8 @@ function Send-Pigma($json) {
 
 Send-Pigma '{"cmd":"status"}'                 # 查询状态
 Send-Pigma '{"cmd":"list"}'                   # 列出播放队列
-Send-Pigma '{"cmd":"msg","action":"next"}'    # 下一首
-Send-Pigma '{"cmd":"msg","action":"volume","absolute":0.75}'  # 音量 75%
+Send-Pigma '{"cmd":"msg","action":{"action":"next"}}'    # 下一首
+Send-Pigma '{"cmd":"msg","action":{"action":"volume","absolute":0.75}}'  # 音量 75%
 ```
 
 ### 无头守护进程模式（pigma -d）

@@ -367,15 +367,10 @@ impl App {
                     };
 
                     // Download the cover (async client — no blocking runtime
-                    // owned by App) and process the image off the runtime.
-                    let protocol = if let Some(cached) = cache.load_cover_async(song_id).await {
-                        tokio::task::spawn_blocking(move || {
-                            build_cover_protocol(&cached, picker.clone())
-                        })
-                        .await
-                        .ok()
-                        .flatten()
-                    } else {
+                    // owned by App) and process the image off the runtime. The
+                    // cache was already checked above; a redundant re-check here
+                    // would double the disk reads on every miss.
+                    let protocol = {
                         let Ok(resp) = cover_http.get(&small_url).send().await else {
                             return;
                         };

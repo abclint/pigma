@@ -8,7 +8,7 @@ pub mod index;
 pub mod lyrics;
 
 use std::path::PathBuf;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, RwLock};
 
 use index::CacheIndex;
@@ -27,4 +27,9 @@ pub struct CacheManager {
     index: Arc<RwLock<CacheIndex>>,
     max_cache_bytes: u64,
     cached_total_bytes: Arc<AtomicU64>,
+    /// Set by every in-memory mutation of the index; a pending writer drains it
+    /// so a burst of mutations coalesces into few disk writes.
+    index_dirty: Arc<AtomicBool>,
+    /// Guard ensuring at most one index-write loop is in flight.
+    index_write_pending: Arc<AtomicBool>,
 }

@@ -190,6 +190,13 @@ impl PlaybackEngine {
         self.queue.current_index
     }
 
+    /// Monotonic version of the queue, bumped on every mutation. Callers that
+    /// mirror the queue elsewhere (e.g. the IPC snapshot) can skip rebuilding
+    /// when this is unchanged.
+    pub fn queue_version(&self) -> u64 {
+        self.queue.version()
+    }
+
     pub fn set_queue_songs(&mut self, songs: Vec<Arc<SongInfo>>) {
         self.queue.set_songs(songs);
     }
@@ -501,6 +508,7 @@ impl PlaybackEngine {
         {
             self.controller.stop();
             self.queue.current_index = Some(pos);
+            self.queue.bump();
             self.start_current_song(None);
             return;
         }
@@ -508,6 +516,7 @@ impl PlaybackEngine {
         if let Some(idx) = self.queue.prev_index(&mut self.strategy) {
             self.controller.stop();
             self.queue.current_index = Some(idx);
+            self.queue.bump();
             self.start_current_song(None);
         }
     }

@@ -15,12 +15,12 @@ use regex::Regex;
 pub enum SearchMode {
     /// Return results in the order providers responded (cheapest, ignores match quality).
     FirstReturned,
-    /// Re-rank by [`SonarFinder::calculate_match_score`] so the closest title wins (default).
+    /// Re-rank by [`SonarFinder::score_with`] so the closest title wins (default).
     BestScore,
 }
 
 /// Weight multiplier for a query token found in the artist field (stronger
-/// signal than a bare name hit, see [`SonarFinder::calculate_match_score`]).
+/// signal than a bare name hit, see [`SonarFinder::score_with`]).
 const ARTIST_HIT_WEIGHT: f64 = 1.5;
 
 /// Duration-match bonus tiers, in milliseconds of difference from the target.
@@ -70,6 +70,17 @@ fn is_secondary_version(s: &str) -> bool {
     SECONDARY_VERSION_MARKERS.iter().any(|m| s.contains(m))
         || INSTRUMENTAL_RE.is_match(s)
         || LIVE_RE.is_match(s)
+}
+
+/// Query-derived values that are identical for every candidate song in a
+/// search; built once per merge so the per-song scoring loop never re-normalizes
+/// the query.
+struct NormalizedQuery {
+    /// Lowercased, CJK-normalized query tokens.
+    tokens: Vec<String>,
+    duration: Option<u64>,
+    /// Whether the normalized query text itself marks a secondary version.
+    is_secondary: bool,
 }
 
 /// Tunables for a [`SonarFinder`] search session.
@@ -273,9 +284,12 @@ impl SonarFinder {
         let final_songs = match self.config.mode {
             SearchMode::FirstReturned => all_songs,
             SearchMode::BestScore => {
+                // Query-derived values are identical for every candidate song;
+                // normalize them once instead of per song.
+                let query_norm = Self::normalize_query(query);
                 let mut scored: Vec<(f64, Song)> = all_songs
                     .into_iter()
-                    .map(|song| (self.calculate_match_score(&song, query), song))
+                    .map(|song| (self.score_with(&song, &query_norm), song))
                     .collect();
                 scored.sort_by(|a, b| {
                     b.0.partial_cmp(&a.0)
@@ -294,10 +308,28 @@ impl SonarFinder {
         }
     }
 
-    /// Score how well a song matches the query, based on the artist, the song
-    /// name and (optionally) the duration. The final selection picks the best
-    /// scoring source that can actually provide a playable URL.
-    fn calculate_match_score(&self, song: &Song, query: &SearchQuery) -> f64 {
+    /// Query-derived values that are invariant across all candidate songs in a
+    /// search. Precomputed once per [`Self::merge_results`] call so the hot loop
+    /// doesn't re-lowercase / re-normalize the query for every song.
+    fn normalize_query(query: &SearchQuery) -> NormalizedQuery {
+        let text = crate::util::normalize_for_match(&query.keyword);
+        let tokens = query
+            .keyword
+            .to_lowercase()
+            .split_whitespace()
+            .filter(|t| !t.is_empty())
+            .map(crate::util::normalize_cjk)
+            .collect();
+        let is_secondary = is_secondary_version(&text);
+        NormalizedQuery {
+            tokens,
+            duration: query.duration,
+            is_secondary,
+        }
+    }
+
+    /// Inner scoring routine taking pre-normalized, loop-invariant query data.
+    fn score_with(&self, song: &Song, query: &NormalizedQuery) -> f64 {
         let mut score = 0.0;
 
         let name = crate::util::normalize_for_match(&song.name);
@@ -306,15 +338,11 @@ impl SonarFinder {
         let mut name_hits = 0.0;
         let mut artist_hits = 0.0;
 
-        for token in query.keyword.to_lowercase().split_whitespace() {
-            if token.is_empty() {
-                continue;
-            }
-            let token = crate::util::normalize_cjk(token);
-            if name.contains(&token) {
+        for token in &query.tokens {
+            if name.contains(token.as_str()) {
                 name_hits += 1.0;
             }
-            if artist.contains(&token) {
+            if artist.contains(token.as_str()) {
                 artist_hits += 1.0;
             }
         }
@@ -340,8 +368,7 @@ impl SonarFinder {
         // live recordings) so the original studio recording wins when both
         // surface in the results. Skipped when the search itself asks for such
         // a version (the query carries the marker).
-        let query_text = crate::util::normalize_for_match(&query.keyword);
-        if !is_secondary_version(&query_text) && is_secondary_version(&name) {
+        if !query.is_secondary && is_secondary_version(&name) {
             score -= SECONDARY_VERSION_PENALTY;
         }
 
@@ -518,7 +545,8 @@ mod tests {
 
     fn score(name: &str, singer: &str, keyword: &str) -> f64 {
         let finder = SonarFinder::new(SearchConfig::default()).unwrap();
-        finder.calculate_match_score(&song(name, singer), &SearchQuery::new(keyword))
+        let query = SearchQuery::new(keyword);
+        finder.score_with(&song(name, singer), &SonarFinder::normalize_query(&query))
     }
 
     #[test]

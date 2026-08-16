@@ -180,16 +180,16 @@ impl NcmClient {
         })
     }
 
-    /// Generic HTTP POST request (shared by weapi/eapi)
+    /// Generic HTTP POST request (shared by weapi/eapi). Callers hand over the
+    /// already-prepared cookies so the lock/header build happens exactly once
+    /// per request.
     async fn send_request(
         &self,
         url: String,
         body: String,
         host: &str,
-        is_eapi: bool,
+        cookies: &RequestCookies,
     ) -> Result<String, NcmError> {
-        let cookies = self.prepare_request(is_eapi)?;
-
         let resp = self
             .http
             .post(&url)
@@ -252,7 +252,8 @@ impl NcmClient {
             format!("{}{}?csrf_token={}", BASE_URL, path, cookies.csrf)
         };
 
-        self.send_request(url, body, "music.163.com", false).await
+        self.send_request(url, body, "music.163.com", &cookies)
+            .await
     }
 
     /// Send an eapi request (core implementation).

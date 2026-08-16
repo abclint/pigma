@@ -14,7 +14,12 @@ use crate::config::Theme;
 use crate::layout::LoginLayout;
 use crate::state::LoginState;
 
-pub(super) fn draw(f: &mut Frame, login: &LoginState, bs: &BlockStyle<'_>, layout: &LoginLayout) {
+pub(super) fn draw(
+    f: &mut Frame,
+    login: &mut LoginState,
+    bs: &BlockStyle<'_>,
+    layout: &LoginLayout,
+) {
     let colors = bs.colors;
     render_status(f, colors, layout.status);
     render_logo(f, colors, layout.logo);
@@ -63,7 +68,7 @@ fn render_status(f: &mut Frame, colors: &Theme, area: Rect) {
     f.render_widget(Paragraph::new(line).alignment(Alignment::Right), area);
 }
 
-fn render_box(f: &mut Frame, login: &LoginState, bs: &BlockStyle<'_>, area: Rect) {
+fn render_box(f: &mut Frame, login: &mut LoginState, bs: &BlockStyle<'_>, area: Rect) {
     let colors = bs.colors;
     let box_width = area.width.saturating_sub(10).min(64);
     let box_x = area.x + (area.width.saturating_sub(box_width)) / 2;
@@ -89,7 +94,7 @@ fn render_box(f: &mut Frame, login: &LoginState, bs: &BlockStyle<'_>, area: Rect
     render_inner(f, login, colors, inner);
 }
 
-fn render_inner(f: &mut Frame, login: &LoginState, colors: &Theme, area: Rect) {
+fn render_inner(f: &mut Frame, login: &mut LoginState, colors: &Theme, area: Rect) {
     let [content_area, err_area, btn_area, footer_area] = Layout::vertical([
         Constraint::Min(14),
         Constraint::Length(1),
@@ -126,7 +131,7 @@ fn render_inner(f: &mut Frame, login: &LoginState, colors: &Theme, area: Rect) {
     render_footer(f, colors, footer_area);
 }
 
-fn render_qr_content(f: &mut Frame, login: &LoginState, colors: &Theme, area: Rect) {
+fn render_qr_content(f: &mut Frame, login: &mut LoginState, colors: &Theme, area: Rect) {
     if login.qr_url.is_empty() {
         let msg = Line::from(Span::styled(
             "  Press ENTER to generate QR code  ",
@@ -147,26 +152,39 @@ fn render_qr_content(f: &mut Frame, login: &LoginState, colors: &Theme, area: Re
         return;
     }
 
-    let code = match QrCode::new(login.qr_url.as_bytes()) {
-        Ok(code) => code,
-        Err(_) => {
-            let msg = Line::from(Span::styled(
-                "  Failed to generate QR code  ",
-                Style::default().fg(colors.error),
-            ));
-            f.render_widget(Paragraph::new(msg).alignment(Alignment::Center), area);
-            return;
+    // Encode only once per url; QR (Reed-Solomon) generation is CPU-heavy and
+    // the url only changes on login events.
+    if login
+        .qr_cache
+        .as_ref()
+        .is_none_or(|(url, _)| url != &login.qr_url)
+    {
+        match QrCode::new(login.qr_url.as_bytes()) {
+            Ok(code) => {
+                let qr_str = code.render::<Dense1x2>().quiet_zone(false).build();
+                login.qr_cache = Some((
+                    login.qr_url.clone(),
+                    qr_str.lines().map(|l| l.to_string()).collect(),
+                ));
+            }
+            Err(_) => {
+                let msg = Line::from(Span::styled(
+                    "  Failed to generate QR code  ",
+                    Style::default().fg(colors.error),
+                ));
+                f.render_widget(Paragraph::new(msg).alignment(Alignment::Center), area);
+                return;
+            }
         }
-    };
-    let qr_str = code.render::<Dense1x2>().quiet_zone(false).build();
-    let mut lines: Vec<Line> = qr_str
-        .lines()
-        .map(|l| {
-            Line::from(Span::styled(
-                l.to_string(),
-                Style::default().fg(colors.accent),
-            ))
-        })
+    }
+
+    let mut lines: Vec<Line> = login
+        .qr_cache
+        .as_ref()
+        .map(|(_, rendered)| rendered)
+        .into_iter()
+        .flatten()
+        .map(|l| Line::from(Span::styled(l.clone(), Style::default().fg(colors.accent))))
         .collect();
 
     let hint = if login.qr_status_text.is_empty() {
