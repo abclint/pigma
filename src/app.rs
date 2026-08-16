@@ -28,7 +28,7 @@ use crate::config::{Config, ThemeRegistry};
 use crate::event::AuthEvent;
 use crate::event::EventHandler;
 use crate::ipc::{IpcEvent, QueueSnapshot, StatusSnapshot};
-use crate::playback::{PlaybackEngine, scan_local_music};
+use crate::playback::PlaybackEngine;
 use crate::service::{ApiEndpoint, ApiService};
 use crate::state::{
     ContentState, HelpState, LoginState, NavState, NavigationState, Page, SearchProvider,
@@ -445,30 +445,10 @@ impl App {
     async fn load_endpoint(&mut self, api_str: &str, playlist_index: Option<usize>) -> bool {
         let api = ApiEndpoint::parse(api_str).unwrap_or(ApiEndpoint::RecommendSongs);
         let uid = self.state.navigation.user.as_ref().map(|u| u.uid);
-        let content = if api == ApiEndpoint::LikedSongs
-            && let Some(uid) = uid
-        {
-            let (state, _, _) = self
-                .service
-                .load_liked_songs(uid, self.config.search_limit)
-                .await;
-            state
-        } else if api == ApiEndpoint::Download {
-            let songs = self.service.cache().list_cached_songs_async().await;
-            ContentState::Songs(songs.into_iter().map(std::sync::Arc::new).collect())
-        } else if api == ApiEndpoint::LocalMusic {
-            let music_dir = dirs::home_dir().unwrap_or_default().join("Music");
-            let songs = tokio::task::spawn_blocking(move || scan_local_music(&music_dir))
-                .await
-                .unwrap_or_default();
-            ContentState::Songs(songs.into_iter().map(std::sync::Arc::new).collect())
-        } else {
-            let (state, _) = self
-                .service
-                .resolve_content(api, uid, self.config.search_limit)
-                .await;
-            state
-        };
+        let content = self
+            .service
+            .resolve_endpoint_content(api, uid, self.config.search_limit)
+            .await;
 
         // Playlist/toplist endpoints resolve to a *list* of playlists; pick one
         // (default first, or `--playlist N`) and load its songs.

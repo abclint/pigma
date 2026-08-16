@@ -179,8 +179,8 @@ pub async fn list(endpoint: &str) -> color_eyre::Result<()> {
         std::process::exit(1);
     });
 
-    let (content, _) = service
-        .resolve_content(api_ep, uid, config.search_limit)
+    let content = service
+        .resolve_endpoint_content(api_ep, uid, config.search_limit)
         .await;
 
     match content {
