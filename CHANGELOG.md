@@ -1,3 +1,22 @@
+## [0.2.11] - 2026-08-16
+
+### 🐛 Bug Fixes
+
+- *(playback)* Bundle minimal ALSA config for musl static builds (akirco)
+- *(playback)* Use default hw card in bundled musl ALSA config (akirco)
+
+### 💼 Other
+
+- Remove musl targets (static musl cannot use PipeWire/PA plugins) (akirco)
+
+### 🎨 Styling
+
+- *(playback)* Fmt and wrap unsafe set_var for edition 2024 (akirco)
+
+### ⚙️ Miscellaneous Tasks
+
+- Generate release notes with git-cliff and remove release-drafter (akirco)
+- *(ci)* Remove 'dev' branch from CI trigger paths (akirco)
 # Changelog
 
 ## [0.2.10] - 2026-08-16
