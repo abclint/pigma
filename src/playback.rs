@@ -15,6 +15,8 @@ mod state;
 mod storage;
 mod stream_client;
 
+#[cfg(all(target_os = "linux", target_env = "musl"))]
+pub use player::init_alsa_config_for_musl;
 pub use cover::CoverState;
 pub use engine::{NCM_SEARCH_QUEUE_KEY, PlaybackEngine, THIRD_PARTY_QUEUE_KEY};
 pub use lyrics::{LyricLine, parse_lyric_lines};

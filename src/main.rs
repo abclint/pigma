@@ -15,6 +15,10 @@ use pigma::logger::init_logger;
 
 #[tokio::main]
 async fn main() -> color_eyre::Result<()> {
+    // musl: write bundled ALSA config & set ALSA_CONFIG_DIR before audio init
+    #[cfg(all(target_os = "linux", target_env = "musl"))]
+    pigma::playback::init_alsa_config_for_musl();
+
     let cli = Cli::parse();
     let socket = match &cli.command {
         Some(Command::Status { socket, .. }) | Some(Command::Msg { socket, .. }) => {
