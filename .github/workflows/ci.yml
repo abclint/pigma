@@ -23,9 +23,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  skip-check:
+    name: skip release commits
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.check.outputs.skip }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.ref }}
+          fetch-depth: 1
+      - name: Check commit message
+        id: check
+        run: |
+          msg="$(git log -1 --format='%s')"
+          if [[ "$msg" == release* ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
   fmt:
     name: fmt
-    if: ${{ !startsWith(github.event.head_commit.message, 'release') }}
+    needs: skip-check
+    if: needs.skip-check.outputs.skip == 'false'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -43,7 +64,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
   clippy:
     name: clippy
-    if: ${{ !startsWith(github.event.head_commit.message, 'release') }}
+    needs: skip-check
+    if: needs.skip-check.outputs.skip == 'false'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -69,7 +91,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
   build-aarch64:
     name: build linux/aarch64
-    if: ${{ !startsWith(github.event.head_commit.message, 'release') }}
+    needs: skip-check
+    if: needs.skip-check.outputs.skip == 'false'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -97,7 +120,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
   build-aarch64-musl:
     name: build linux/aarch64/musl
-    if: ${{ !startsWith(github.event.head_commit.message, 'release') }}
+    needs: skip-check
+    if: needs.skip-check.outputs.skip == 'false'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -125,7 +149,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
   build-x86_64-musl:
     name: build linux/x86_64/musl
-    if: ${{ !startsWith(github.event.head_commit.message, 'release') }}
+    needs: skip-check
+    if: needs.skip-check.outputs.skip == 'false'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -155,7 +180,8 @@ jobs:
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
   test:
-    if: ${{ !startsWith(github.event.head_commit.message, 'release') }}
+    needs: skip-check
+    if: needs.skip-check.outputs.skip == 'false'
     runs-on: ${{ matrix.os }}
     name: test ${{ matrix.os }}
     strategy:
