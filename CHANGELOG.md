@@ -1,3 +1,17 @@
+## [0.2.12] - 2026-08-16
+
+### 🚀 Features
+
+- *(path)* Add expand_tilde function to handle home directory paths (akirco)
+
+### 🐛 Bug Fixes
+
+- *(cli)* List download and local music panic (akirco)
+
+### 🚜 Refactor
+
+- *(cli)* Streamline CLI command handling and improve structure (akirco)
+- *(bilivideo)* Improve cookie handling and enhance error logging for transient failures (akirco)
 ## [0.2.11] - 2026-08-16
 
 ### 🐛 Bug Fixes

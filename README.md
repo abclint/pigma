@@ -24,6 +24,7 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
   - [Usage](#usage)
     - [CLI 控制（status / msg）](#cli-控制status--msg)
       - [直接走 Unix socket（socat / 脚本）](#直接走-unix-socketsocat--脚本)
+      - [直接走 Unix socket（socat / 脚本）](#直接走-unix-socketsocat--脚本-1)
       - [Windows：命名管道控制（PowerShell）](#windows命名管道控制powershell)
     - [无头守护进程模式（pigma -d）](#无头守护进程模式pigma--d)
   - [Configuration](#configuration)
@@ -84,7 +85,7 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
 - [x] 重构进入程序流程
 - [x] 命令行控制（status/msg）+ JSON IPC（waybar 等）
 - [x] 守护进程模式（`pigma -d`）
-- [ ] 重写splash
+- [x] 重写splash
 - [ ] command panel重写，更多运行时配置支持
 - [ ] 云盘源作为fallback
 - [ ] 本地音频歌词，元数据重写
@@ -639,6 +640,7 @@ git clone https://github.com/akirco/pigma.git
 cd pigma
 git submodule update --init --recursive
 cargo run
+cargo +nightly fmt
 ```
 
 ## Plan
