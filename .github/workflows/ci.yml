@@ -126,34 +126,6 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Install musl-tools and build ALSA locally
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y musl-tools wget make sed linux-libc-dev
-          SYSROOT="/usr/local/x86_64-linux-musl"
-          sudo mkdir -p "$SYSROOT/usr/include"
-          sudo chown -R $USER "$SYSROOT"
-
-          ln -s /usr/include/linux "$SYSROOT/usr/include/linux"
-          ln -s /usr/include/x86_64-linux-gnu/asm "$SYSROOT/usr/include/asm"
-          ln -s /usr/include/asm-generic "$SYSROOT/usr/include/asm-generic"
-
-          ALSA_VERSION="1.2.16.1"
-          ALSA_URL="https://www.alsa-project.org/files/pub/lib/alsa-lib-${ALSA_VERSION}.tar.bz2"
-          cd /tmp
-          wget -q "$ALSA_URL"
-          tar xf "alsa-lib-${ALSA_VERSION}.tar.bz2"
-          cd "alsa-lib-${ALSA_VERSION}"
-
-          export CC="musl-gcc"
-          export CFLAGS="-fPIC -isystem $SYSROOT/usr/include"
-          export LDFLAGS="-L$SYSROOT/usr/lib"
-
-          ./configure --host=x86_64-linux-musl --prefix="$SYSROOT/usr" --enable-static --disable-shared --disable-python --without-versioned
-          make -j"$(nproc)"
-          make install
-          sed -i '/Requires:/d' "$SYSROOT/usr/lib/pkgconfig/alsa.pc"
-
       - name: Setup Cargo Env
         run: |
           mkdir -p .cargo
@@ -163,12 +135,14 @@ jobs:
           PKG_CONFIG_PATH = "/usr/local/x86_64-linux-musl/usr/lib/pkgconfig"
           EOF
 
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cross
+        run: cargo install cross --locked
+
       - name: Build for x86_64-unknown-linux-musl
-        uses: houseabsolute/actions-rust-cross@v0
-        with:
-          target: x86_64-unknown-linux-musl
-          command: build
-          args: '--locked'
+        run: cross +stable build --locked --target x86_64-unknown-linux-musl
 
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
