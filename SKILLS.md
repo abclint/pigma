@@ -92,7 +92,9 @@ pigma msg [OPTIONS] <ACTION> [VALUE]
 
 | 动作 | 别名 | 说明 |
 |---|---|---|
-| `play` | | 播放 |
+| `play` | | 播放/恢复；`play <ID>` 跳到队列中指定歌曲并播放 |
+| `search <KEYWORD>` | | 搜索并**返回**歌曲数据（请求/响应，非 fire-and-forget）；NCM 在前、再并上已启用 sonar 源，每行标 `source` 与 `id`，并注册到守护进程，随后 `play <ID>` 即可播放选中的那首 |
+| `toggle_play` | `play_pause` | 播放/暂停切换（停止时开始） |
 | `pause` | | 暂停 |
 | `next` | | 下一首 |
 | `previous` | `prev` | 上一首 |
@@ -107,6 +109,10 @@ pigma msg [OPTIONS] <ACTION> [VALUE]
 
 ```bash
 pigma msg play
+pigma msg play 187186        # 按歌曲 id 播放（先 `pigma status -L --json` 查 id）
+pigma msg search 周杰伦       # 返回: source + id + 歌名 - 歌手（在守护进程内搜索，跨实例可用）
+pigma msg play 11201139274454706721  # 播放上面搜到的某首 sonar 结果
+pigma msg toggle_play
 pigma msg next
 pigma msg volume 75
 pigma msg volume +5
@@ -129,6 +135,8 @@ pigma msg toggle_like
 printf '{"cmd":"status"}\n' | socat - "$HOME/.cache/pigma/pigma.sock"
 # 列出播放队列
 printf '{"cmd":"list"}\n' | socat - "$HOME/.cache/pigma/pigma.sock"
+# 搜索（回一行 JSON 数组，结果已注册到守护进程，可直接 play 其 id）
+printf '{"cmd":"search","keyword":"周杰伦"}\n' | socat - "$HOME/.cache/pigma/pigma.sock"
 # 播放控制（注意嵌套的 action 对象）
 printf '{"cmd":"msg","action":{"action":"next"}}\n' | socat - "$HOME/.cache/pigma/pigma.sock"
 printf '{"cmd":"msg","action":{"action":"play"}}\n' | socat - "$HOME/.cache/pigma/pigma.sock"
@@ -185,7 +193,10 @@ Windows 命名管道协议相同，socket 路径可用 `--socket <pipe-name>` �
 pigma -d
 pigma msg play
 
-# 2. Waybar 状态模块（参考 waybar/pigma 脚本）
+# 2. Waybar 状态模块（连续脚本，事件推送；参考 waybar/config.jsonc）
+pigma status --waybar               # 一次输出 waybar JSON（图标/class/跑马灯/tooltip）
+pigma status --waybar --icon like   # 按钮图标：like | play | prev | next
+pigma status --waybar --watch       # 长驻订阅：每次快照变更打印一行（waybar 用这个）
 pigma status --template "{artist} – {name} [{status}]"
 
 # 3. 音量快捷键

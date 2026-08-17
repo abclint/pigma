@@ -43,48 +43,54 @@
       "children-class": "drawer-child"
     }
   },
-  "custom/pigma#like": {
-    "exec": "~/.config/waybar/scripts/pigma --icon like",
-    "interval": 1,
+  // 状态模块：连续脚本（无 interval），waybar 逐行读取实时输出。
+  // `pigma status --waybar --watch` 订阅 daemon，每次快照变更打印一行 JSON。
+  // 若 pigma 未运行会打印 off 并重试；脚本意外退出由 restart-interval 拉起。
+  "custom/pigma": {
+    "exec": "pigma status --waybar --watch",
     "return-type": "json",
-    "on-click": "~/.config/waybar/scripts/pigma --like",
+    "exec-on-event": false,
+    "restart-interval": 5,
+    "tooltip": true,
+    "on-click-right": "pigma msg mode",
+    "on-scroll-up": "pigma msg volume +5",
+    "on-scroll-down": "pigma msg volume -5",
+    "format": "{}"
+  },
+  "custom/pigma#like": {
+    "exec": "pigma status --waybar --icon like --watch",
+    "return-type": "json",
+    "exec-on-event": false,
+    "restart-interval": 5,
+    "on-click": "pigma msg toggle_like",
     "on-scroll-up": "pigma msg volume +5",
     "on-scroll-down": "pigma msg volume -5",
     "format": "{}"
   },
   "custom/pigma#prev": {
-    "exec": "~/.config/waybar/scripts/pigma --icon prev",
+    "exec": "pigma status --waybar --icon prev",
     "interval": "once",
     "return-type": "json",
-    "on-click": "~/.config/waybar/scripts/pigma --previous",
+    "on-click": "pigma msg previous",
     "on-scroll-up": "pigma msg volume +5",
     "on-scroll-down": "pigma msg volume -5",
     "format": "{}"
   },
   "custom/pigma#play": {
-    "exec": "~/.config/waybar/scripts/pigma --icon play",
-    "interval": 1,
+    "exec": "pigma status --waybar --icon play --watch",
     "return-type": "json",
-    "on-click": "~/.config/waybar/scripts/pigma --toggle",
+    "exec-on-event": false,
+    "restart-interval": 5,
+    "on-click": "pigma msg toggle_play",
     "on-scroll-up": "pigma msg volume +5",
     "on-scroll-down": "pigma msg volume -5",
     "format": "{}"
   },
   "custom/pigma#next": {
-    "exec": "~/.config/waybar/scripts/pigma --icon next",
+    "exec": "pigma status --waybar --icon next",
     "interval": "once",
     "return-type": "json",
-    "on-click": "~/.config/waybar/scripts/pigma --next",
-    "on-scroll-up": "pigma msg volume +5",
-    "on-scroll-down": "pigma msg volume -5",
-    "format": "{}"
-  },
-  "custom/pigma": {
-    "exec": "~/.config/waybar/scripts/pigma",
-    "interval": 1,
-    "tooltip": true,
-    "return-type": "json",
-    "on-click-right": "pigma msg mode",
+    "on-click": "pigma msg next",
     "on-scroll-up": "pigma msg volume +5",
     "on-scroll-down": "pigma msg volume -5",
     "format": "{}"

@@ -200,7 +200,9 @@ cargo build --release
 | `pigma status --template "{name}  {artist}  {current}/{duration}  {status}  vol {volume}%"` | 自定义 plain 输出模板 |
 | `pigma list <endpoint>` | 列出端点解析出的歌单/歌曲（带序号），序号即 `--playlist N` 用的下标；无需运行实例 |
 | `pigma msg next` / `pigma msg previous` | 下一首 / 上一首 |
-| `pigma msg pause` / `pigma msg play` | 暂停 / 播放 |
+| `pigma msg pause` / `pigma msg play` | 暂停 / 播放（`pigma msg play <song-id>` 按 id 跳播队列中的歌曲） |
+| `pigma msg search <keyword>` | 搜索并返回歌曲数据（NCM + 已启用 sonar 源，标出 `source` 和 `id`），再 `pigma msg play <id>` 播放选中的那首 |
+| `pigma msg toggle_play` | 播放/暂停切换 |
 | `pigma msg mode` | 切换播放模式 |
 | `pigma msg like` / `pigma msg dislike` | 喜欢 / 不喜欢 |
 | `pigma msg toggle_like` | 喜欢/取消喜欢（切换当前曲目） |
@@ -309,7 +311,20 @@ Send-Pigma '{"cmd":"msg","action":{"action":"volume","absolute":0.75}}'  # 音�
 
 **Waybar 集成**：
 
- - 参考[waybar](./waybar)
+  - 参考[waybar](./waybar)。状态模块用连续脚本 `pigma status --waybar --watch`：waybar 逐行读取输出、每次快照变更即时刷新（事件推送，无需每秒轮询）。按钮图标同理（`--icon like/play`），`prev`/`next` 是静态图标（`interval: once`）。
+
+```jsonc
+// ~/.config/waybar/config.jsonc 核心片段
+"custom/pigma": {
+  "exec": "pigma status --waybar --watch",
+  "return-type": "json",
+  "exec-on-event": false,
+  "restart-interval": 5,          // 脚本意外退出后自动重拉
+  "on-click-right": "pigma msg mode",
+  "on-scroll-up": "pigma msg volume +5",
+  "on-scroll-down": "pigma msg volume -5"
+}
+```
 
 ## Configuration
 Config file location:

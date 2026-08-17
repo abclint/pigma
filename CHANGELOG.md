@@ -1,3 +1,13 @@
+# Changelog
+
+## [Unreleased]
+
+### 🚀 Features
+
+- *(cli/waybar)* Add native waybar output (`pigma status --waybar`) and event-push subscription (`--watch` + IPC `subscribe`), replacing the polling bash wrapper script (akirco)
+- *(cli)* Add `pigma msg play <song-id>` to jump to a song in the queue by id, and `pigma msg toggle_play` play/pause toggle (akirco)
+- *(cli)* Add `pigma msg search <keyword>`: the daemon searches NCM + sonar sources, returns songs tagged by source, and registers them so `pigma msg play <id>` can enqueue and play a search result across instances (sonar synthetic ids resolve in-process) (akirco)
+
 ## [0.2.12] - 2026-08-16
 
 ### 🚀 Features

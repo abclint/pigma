@@ -473,6 +473,17 @@ impl PlaybackEngine {
         self.start_current_song(None);
     }
 
+    /// Jump to the song with `song_id` in the active queue and start playing
+    /// it. Returns `false` when the id is not in the queue (e.g. `pigma msg
+    /// play <id>` targeting a song from another list).
+    pub fn play_song_by_id(&mut self, song_id: u64) -> bool {
+        let Some(index) = self.queue.find_song_index(song_id) else {
+            return false;
+        };
+        self.play_index(index);
+        true
+    }
+
     /// Add `song` to the current queue right after the playing song.
     /// Keeps the rest of the queue intact. Does not interrupt the currently
     /// playing song.

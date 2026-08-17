@@ -7,14 +7,17 @@ mod event;
 mod login;
 mod navigation;
 mod search;
+mod search_core;
 mod splash;
 mod theme;
+
+pub use search_core::{SearchEngine, SearchResults};
 
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use ncm_api::SongList;
@@ -29,7 +32,7 @@ use crate::{
     config::{Config, ThemeRegistry},
     event::{AuthEvent, EventHandler},
     ipc::{IpcEvent, QueueSnapshot, StatusSnapshot},
-    playback::PlaybackEngine,
+    playback::{NCM_SEARCH_QUEUE_KEY, PlaybackEngine, THIRD_PARTY_QUEUE_KEY},
     service::{ApiEndpoint, ApiService},
     state::{
         ContentState, HelpState, LoginState, NavState, NavigationState, Page, SearchProvider,
@@ -53,6 +56,12 @@ pub struct App {
     pub finder: Arc<SonarFinder>,
     /// Original sonar songs for search results, keyed by synthetic song id.
     pub sonar_songs: Arc<Mutex<HashMap<u64, Arc<Song>>>>,
+    /// Registry of recently searched songs (NCM and sonar) keyed by song id,
+    /// shared with the IPC `search` engine so `pigma msg play <id>` can enqueue
+    /// and play a search result that is not in the playback queue.
+    pub search_results: SearchResults,
+    /// Cross-provider search engine serving `pigma msg search <keyword>`.
+    pub searcher: Arc<SearchEngine>,
     /// Song ID set of the user's "我喜欢的音乐" playlist, sharing the same `Arc` as `PlaybackEngine`.
     pub liked_ids: Arc<Mutex<HashSet<u64>>>,
     /// Playlists whose full tracks have already been merged into the playback queue for lazy pagination, avoiding repeated Enter presses refetching/truncating the queue.
@@ -61,6 +70,12 @@ pub struct App {
     pub status: Arc<Mutex<StatusSnapshot>>,
     /// Live playback queue served to `pigma status -L` over the IPC socket.
     pub queue: Arc<Mutex<QueueSnapshot>>,
+    /// Fan-out channel for snapshot changes, consumed by the IPC `subscribe`
+    /// handler so long-running clients (waybar watchers) get event push.
+    status_tx: tokio::sync::broadcast::Sender<StatusSnapshot>,
+    /// When the last snapshot was broadcast; discrete changes fire immediately,
+    /// position refresh (playing) is throttled to once per second.
+    last_status_broadcast: Instant,
     /// Last queue version the `queue` snapshot was built from; rebuilds only on
     /// change instead of cloning the whole queue every event-loop iteration.
     last_queue_version: u64,
@@ -172,6 +187,16 @@ impl App {
             playerbar_area: Rect::default(),
         };
         state.navigation.search.providers = search_providers;
+        let search_results: SearchResults = Arc::new(Mutex::new(HashMap::new()));
+        let searcher = Arc::new(SearchEngine::new(
+            service.clone(),
+            Arc::clone(&finder),
+            Arc::clone(&sonar_songs),
+            Arc::clone(&search_results),
+            config.search_limit as usize,
+            state.navigation.search.providers.clone(),
+        ));
+        let (status_tx, _status_rx) = tokio::sync::broadcast::channel(16);
         Ok(Self {
             config,
             service: service.clone(),
@@ -194,15 +219,23 @@ impl App {
             cover_http,
             finder,
             sonar_songs,
+            search_results,
+            searcher,
             liked_ids,
             queued_playlists: HashSet::new(),
             status: Arc::new(Mutex::new(StatusSnapshot::default())),
             queue: Arc::new(Mutex::new(QueueSnapshot::default())),
+            status_tx,
+            last_status_broadcast: Instant::now(),
             // Force the first `update_status_snapshot` to populate the queue,
             // e.g. when a session is restored from disk during engine startup.
             last_queue_version: u64::MAX,
         })
     }
+
+    /* -------------------------------------------------------------------------- */
+    /*                      shared helpers (TUI + headless)                        */
+    /* -------------------------------------------------------------------------- */
 
     pub fn quit(&mut self) {
         self.playback.save_session();
@@ -223,21 +256,27 @@ impl App {
         self.toast(format!("   {:.0}%", new * 100.0));
     }
 
-    /// Cycle the navigation bar position (left → right → top → bottom) at
-    /// runtime and persist the new value so it survives restarts.
-    pub fn cycle_nav_position(&mut self) {
-        self.config.navigation_position = self.config.navigation_position.cycle();
-        self.config.save();
-        let pos = self.config.navigation_position;
-        self.toast(format!("◧ 导航栏位置: {}", pos.label()));
-    }
-
     /// Refresh the IPC status snapshot from the live playback state. The status
     /// (current song + progress) is cheap and rebuilt each loop; the full queue
     /// listing is only rebuilt when the queue actually changed.
+    ///
+    /// A snapshot change is broadcast to IPC `subscribe` clients immediately;
+    /// while a track is playing the position also advances, but that refresh is
+    /// throttled to once per second so the daemon does not spam subscribers at
+    /// the event-loop rate.
     fn update_status_snapshot(&mut self) {
-        if let Ok(mut snapshot) = self.status.lock() {
-            *snapshot = StatusSnapshot::from_playback(&self.playback.state);
+        let snapshot = StatusSnapshot::from_playback(&self.playback.state);
+        let mut changed = false;
+        if let Ok(mut stored) = self.status.lock() {
+            changed = stored.meaningfully_differs(&snapshot);
+            *stored = snapshot.clone();
+        }
+        let elapsed = self.last_status_broadcast.elapsed();
+        let position_stale =
+            snapshot.playing && !snapshot.paused && elapsed >= Duration::from_secs(1);
+        if changed || position_stale {
+            self.last_status_broadcast = Instant::now();
+            let _ = self.status_tx.send(snapshot);
         }
         let version = self.playback.queue_version();
         if version != self.last_queue_version {
@@ -268,12 +307,43 @@ impl App {
                     self.playback.toggle_pause();
                 }
             }
-            IpcEvent::Play => {
-                // Resume when paused; start when stopped (if a song is queued).
-                if self.playback.state.paused || !self.playback.state.playing {
+            IpcEvent::Play { song_id } => {
+                if let Some(id) = song_id {
+                    // Jump to a song in the active queue and play it. Songs
+                    // returned by `pigma msg search` are not queued, so fall
+                    // back to the shared search-result registry and enqueue the
+                    // result (sonar songs keep their synthetic id, which the
+                    // playback source resolves via `sonar_songs`).
+                    if !self.playback.play_song_by_id(id)
+                        && let Some(song) = self
+                            .search_results
+                            .lock()
+                            .ok()
+                            .and_then(|m| m.get(&id).cloned())
+                    {
+                        let key = if sonar::is_sonar_song_id(id) {
+                            THIRD_PARTY_QUEUE_KEY
+                        } else {
+                            NCM_SEARCH_QUEUE_KEY
+                        };
+                        self.playback.append_and_play_key(key, &[song], 0);
+                    }
+                    let name = self
+                        .playback
+                        .current_song()
+                        .map(|s| s.name.clone())
+                        .unwrap_or_default();
+                    if name.is_empty() {
+                        self.toast(format!("找不到 id={id} 的歌曲"));
+                    } else {
+                        self.toast(format!("♪ 正在播放: {name}"));
+                    }
+                } else if self.playback.state.paused || !self.playback.state.playing {
+                    // Resume when paused; start when stopped (if a song is queued).
                     self.playback.toggle_pause();
                 }
             }
+            IpcEvent::TogglePlay => self.playback.toggle_pause(),
             IpcEvent::Volume { delta, absolute } => {
                 if let Some(delta) = delta {
                     self.adjust_volume(delta);
@@ -321,12 +391,30 @@ impl App {
         }
     }
 
+    /* -------------------------------------------------------------------------- */
+    /*                                  TUI mode                                   */
+    /* -------------------------------------------------------------------------- */
+
+    /// Cycle the navigation bar position (left → right → top → bottom) at
+    /// runtime and persist the new value so it survives restarts. Keyboard
+    /// `p`/`shift+p` binding.
+    pub fn cycle_nav_position(&mut self) {
+        self.config.navigation_position = self.config.navigation_position.cycle();
+        self.config.save();
+        let pos = self.config.navigation_position;
+        self.toast(format!("◧ 导航栏位置: {}", pos.label()));
+    }
+
+    /// Interactive terminal entry point (`pigma` without subcommands). Draws
+    /// the UI, serves the IPC socket, and pumps the event loop until quit.
     pub async fn run(mut self, mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
         self.start_splash_boot();
         let _ipc_guard = crate::ipc::start_server(
             Arc::clone(&self.status),
             Arc::clone(&self.queue),
+            self.status_tx.clone(),
             self.state.events.sender(),
+            Arc::clone(&self.searcher),
         );
         while self.state.running {
             self.update_status_snapshot();
@@ -369,6 +457,10 @@ impl App {
         ui::draw(frame, self);
     }
 
+    /* -------------------------------------------------------------------------- */
+    /*                              CLI / headless daemon                          */
+    /* -------------------------------------------------------------------------- */
+
     /// Headless daemon mode (`pigma --daemon <endpoint>`): no terminal is opened.
     /// Loads the endpoint as the initial list, starts playing it, and runs the
     /// IPC socket so `pigma status` / `pigma msg` can observe and control it.
@@ -382,7 +474,9 @@ impl App {
         let _ipc_guard = crate::ipc::start_server(
             Arc::clone(&self.status),
             Arc::clone(&self.queue),
+            self.status_tx.clone(),
             self.state.events.sender(),
+            Arc::clone(&self.searcher),
         );
 
         // Resolve the user session from cookies so login-gated endpoints like
