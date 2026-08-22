@@ -56,7 +56,7 @@ impl App {
                 let state = if ttl > 0 {
                     let cache_clone = cache.clone();
                     tokio::task::spawn_blocking(move || {
-                        cache_clone.save_content_cache("__local_music__", &state, None);
+                        cache_clone.save_content_cache("local_music", &state, None);
                         state
                     })
                     .await
@@ -143,7 +143,7 @@ impl App {
                     let cache_clone = cache.clone();
                     let pg_for_save = pagination.clone();
                     tokio::task::spawn_blocking(move || {
-                        cache_clone.save_content_cache("__liked__", &state, pg_for_save.as_ref());
+                        cache_clone.save_content_cache("liked", &state, pg_for_save.as_ref());
                         state
                     })
                     .await
@@ -326,7 +326,7 @@ impl App {
                     log::info!("Uploaded {} (song_id={})", result.song_name, result.song_id);
                     send_event(
                         &sender,
-                        NavigationEvent::NavSelect("__download__".into()).into(),
+                        NavigationEvent::NavSelect("download".into()).into(),
                     );
                     send_event(
                         &sender,
@@ -346,8 +346,8 @@ impl App {
         let api = self.state.navigation.nav.selected_api().map(str::to_string);
 
         match api.as_deref() {
-            Some("__local_music__") => self.toast("↻ 刷新本地音乐".into()),
-            Some("__download__") => self.toast("↻ 刷新下载".into()),
+            Some("local_music") => self.toast("↻ 刷新本地音乐".into()),
+            Some("download") => self.toast("↻ 刷新下载".into()),
             Some(api_str) => {
                 let _ = self.handle_nav_select(api_str.to_string(), true);
                 self.toast("↻ 刷新当前内容".into());
@@ -368,7 +368,7 @@ impl App {
         let sender = self.state.events.sender();
         send_event(
             &sender,
-            NavigationEvent::NavSelect("__local_music__".into()).into(),
+            NavigationEvent::NavSelect("local_music".into()).into(),
         );
         self.state.navigation.content_selected = 0;
     }

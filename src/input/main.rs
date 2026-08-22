@@ -305,9 +305,9 @@ fn is_daily_recommend(app: &App) -> bool {
 }
 
 fn is_download_view(app: &App) -> bool {
-    current_api(app) == Some("__download__")
+    current_api(app) == Some("download")
 }
 
 fn is_local_music_view(app: &App) -> bool {
-    current_api(app) == Some("__local_music__")
+    current_api(app) == Some("local_music")
 }

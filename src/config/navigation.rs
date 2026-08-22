@@ -6,6 +6,19 @@ pub struct NavConfig {
     pub sections: Vec<NavSectionConfig>,
 }
 
+impl NavConfig {
+    /// The display name of the nav item whose `api` matches `api_str`, if any.
+    /// Lets headless/daemon queue keys match what the TUI would show for the
+    /// same endpoint (e.g. `liked` → " 我喜欢的音乐").
+    pub fn name_for_api(&self, api_str: &str) -> Option<String> {
+        self.sections
+            .iter()
+            .flat_map(|s| &s.items)
+            .find(|item| item.api.as_deref() == Some(api_str))
+            .map(|item| item.name.clone())
+    }
+}
+
 impl Default for NavConfig {
     fn default() -> Self {
         Self {
@@ -55,7 +68,7 @@ impl Default for NavConfig {
                     items: vec![
                         NavItemConfig {
                             name: " 我喜欢的音乐".into(),
-                            api: Some("__liked__".into()),
+                            api: Some("liked".into()),
                             title_template: None,
                         },
                         NavItemConfig {
@@ -80,17 +93,17 @@ impl Default for NavConfig {
                         },
                         NavItemConfig {
                             name: " 下载管理".into(),
-                            api: Some("__download__".into()),
+                            api: Some("download".into()),
                             title_template: None,
                         },
                         NavItemConfig {
                             name: " 本地音乐".into(),
-                            api: Some("__local_music__".into()),
+                            api: Some("local_music".into()),
                             title_template: None,
                         },
                         NavItemConfig {
                             name: " 最近播放".into(),
-                            api: Some("__recent__".into()),
+                            api: Some("recent".into()),
                             title_template: None,
                         },
                     ],

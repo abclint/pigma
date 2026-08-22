@@ -188,7 +188,7 @@ impl Default for ColumnsConfig {
         let mut overrides = HashMap::new();
         overrides.insert("toplist".into(), default_toplist_columns());
         overrides.insert("hotsearch".into(), default_hotsearch_columns());
-        overrides.insert("__download__".into(), default_download_columns());
+        overrides.insert("download".into(), default_download_columns());
         Self {
             songs: default_song_columns(),
             songlist: default_songlist_columns(),
@@ -201,10 +201,10 @@ impl ColumnsConfig {
     pub fn for_content(&self, content_type: ContentType, api: Option<&str>) -> &[ColumnDef] {
         match content_type {
             ContentType::Songs => {
-                // Only apply overrides for song-type APIs (e.g. "__download__"),
+                // Only apply overrides for song-type APIs (e.g. "download"),
                 // not for list-type APIs like "toplist" whose override has wrong fields.
-                if let Some("__download__") = api
-                    && let Some(cols) = self.overrides.get("__download__")
+                if let Some("download") = api
+                    && let Some(cols) = self.overrides.get("download")
                 {
                     return cols;
                 }

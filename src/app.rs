@@ -480,7 +480,7 @@ impl App {
         );
 
         // Resolve the user session from cookies so login-gated endpoints like
-        // `__liked__` can obtain the uid even without an interactive QR login.
+        // `liked` can obtain the uid even without an interactive QR login.
         if self.state.navigation.user.is_none() {
             match self.service.login_status().await {
                 Ok(info) => {
@@ -569,7 +569,15 @@ impl App {
 
         match content {
             ContentState::Songs(songs) if !songs.is_empty() => {
-                self.playback.load_songs(api_str, songs, 0);
+                // Use the nav display name (e.g. " 我喜欢的音乐") as the queue key
+                // so the daemon shows the same title the TUI would, falling back
+                // to the raw endpoint string (e.g. `liked`) when unknown.
+                let key = self
+                    .config
+                    .navigation
+                    .name_for_api(api_str)
+                    .unwrap_or_else(|| api_str.to_string());
+                self.playback.load_songs(&key, songs, 0);
                 true
             }
             ContentState::Error(e) => {

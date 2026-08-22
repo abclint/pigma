@@ -91,7 +91,7 @@ pub enum MsgAction {
     Dislike,
     ToggleLike,
     /// Dynamically switch the daemon's queue to another endpoint. `endpoint` is
-    /// an API endpoint name (e.g. `toplist`, `__liked__`); `playlist` optionally
+    /// an API endpoint name (e.g. `toplist`, `liked`); `playlist` optionally
     /// picks the 1-based playlist within list-type endpoints.
     SwitchList {
         endpoint: String,
@@ -595,7 +595,7 @@ async fn connect() -> color_eyre::Result<ClientStream> {
     let path = resolve_socket_path();
     client_connect(&path)
         .await
-        .wrap_err("pigma is not running (socket not found)")
+        .wrap_err("pigma is not running (start the TUI or `pigma -d`, or check --socket)")
 }
 
 /// Send a `status` request and return the live snapshot.
