@@ -7,8 +7,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use rodio::cpal::traits::{DeviceTrait, HostTrait};
-use rodio::Source;
+use rodio::{
+    Source,
+    cpal::traits::{DeviceTrait, HostTrait},
+};
 use tokio::sync::mpsc;
 
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
@@ -191,7 +193,9 @@ pub(super) fn run(
                         stall_ticks = 0;
                         log::info!(
                             "音频设备已重建{}",
-                            resume_at.map(|t| format!("，从 {t:?} 继续")).unwrap_or_default()
+                            resume_at
+                                .map(|t| format!("，从 {t:?} 继续"))
+                                .unwrap_or_default()
                         );
                         if let Some(t) = resume_at {
                             let _ = reader.0.lock().map(|mut r| r.seek(SeekFrom::Start(0)));
@@ -362,7 +366,9 @@ pub(super) fn run(
                         let recent_underrun =
                             now_ms.saturating_sub(underrun_ms) < UNDERRUN_FRESH_MS;
                         if stall_ticks >= STALL_TICKS && !recent_underrun {
-                            log::warn!("播放位置持续冻结且无网络欠载，疑似输出设备失效，重建音频流");
+                            log::warn!(
+                                "播放位置持续冻结且无网络欠载，疑似输出设备失效，重建音频流"
+                            );
                             rebuild_sink!(Some(pos), false);
                         }
                     }
@@ -447,7 +453,8 @@ fn stream_error_callback(
                 .store(underrun_now(&health.epoch), Ordering::Relaxed);
         }
         // cpal documents both variants as "the stream must be rebuilt".
-        rodio::cpal::StreamError::DeviceNotAvailable | rodio::cpal::StreamError::StreamInvalidated => {
+        rodio::cpal::StreamError::DeviceNotAvailable
+        | rodio::cpal::StreamError::StreamInvalidated => {
             log::warn!("输出设备不可用（{err}），准备重建音频流");
             health.device_lost.store(true, Ordering::Relaxed);
         }
