@@ -194,7 +194,19 @@ cargo build --release
 
 ```bash
 # 生成 shell 补全脚本（bash / zsh / fish / elvish / powershell）
-pigma completions bash    # 例如重定向到 ~/.local/share/bash-completion/completions/pigma
+# bash
+pigma completions bash > ~/.local/share/bash-completion/completions/pigma
+
+# zsh
+pigma completions zsh > "${fpath[1]}/_pigma"
+
+# fish
+pigma completions fish > ~/.config/fish/completions/pigma.fish
+
+# powershell：生成脚本并在 $PROFILE 中自动加载（在 pwsh 里执行）
+pigma completions powershell | Out-File "$HOME/.config/powershell/pigma.ps1" -Encoding utf8
+Add-Content $PROFILE '. "$HOME/.config/powershell/pigma.ps1"'
+
 ```
 
 | 命令 | 说明 |
