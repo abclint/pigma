@@ -1,10 +1,9 @@
 use std::{sync::mpsc, time::Duration};
 
-use rodio::MixerDeviceSink;
 use tokio::sync::mpsc as tokio_mpsc;
 
 use super::player::{self, AudioInput, ControlCmd};
-use crate::event::{Event, PlaybackEvent};
+use crate::event::Event;
 
 #[derive(Clone)]
 pub struct PlaybackHandle {
@@ -30,40 +29,22 @@ impl PlaybackHandle {
         tokio::spawn(async move {
             let mut control_tx: Option<mpsc::Sender<ControlCmd>> = None;
             let mut last_volume: f32 = 1.0;
-            // Create the audio sink once and reuse it across songs,
-            // so the audio device is opened only on the first playback.
-            let mut sink: Option<MixerDeviceSink> = None;
 
             while let Some(cmd) = cmd_rx.recv().await {
                 match cmd {
                     PlayerCmd::Play { input, seek_time } => {
-                        // Lazy-init the audio sink on first playback.
-                        if sink.is_none() {
-                            match player::create_sink(event_tx.clone()) {
-                                Ok(mut s) => {
-                                    s.log_on_drop(false);
-                                    sink = Some(s);
-                                }
-                                Err(e) => {
-                                    let _ = event_tx.send(
-                                        PlaybackEvent::Error(format!("open audio device: {e}"))
-                                            .into(),
-                                    );
-                                    continue;
-                                }
-                            }
-                        }
-
                         if let Some(ref ctrl) = control_tx {
                             // Player task already running — switch to new source.
                             let _ = ctrl.send(ControlCmd::Switch(input, seek_time));
                         } else {
                             // First playback: spawn the persistent player task.
+                            // It owns the audio device sink for its whole
+                            // lifetime and rebuilds it if the output device is
+                            // lost (e.g. Bluetooth disconnect/reconnect).
                             let (ctrl_tx, ctrl_rx) = mpsc::channel();
                             control_tx = Some(ctrl_tx);
                             let tx = event_tx.clone();
-                            let mixer = sink.as_ref().expect("sink just created").mixer().clone();
-                            player::run(input, seek_time, last_volume, tx, ctrl_rx, mixer);
+                            player::run(input, seek_time, last_volume, tx, ctrl_rx);
                         }
                     }
                     PlayerCmd::SeekTo(seek_time) => {
@@ -76,7 +57,8 @@ impl PlaybackHandle {
                             // Player task stays alive, just clears decoder.
                             let _ = ctrl.send(ControlCmd::Stop);
                         }
-                        // Keep sink alive so next play reuses the device.
+                        // Keep the player task alive so next play reuses it
+                        // (and its audio device).
                     }
                     PlayerCmd::Pause => {
                         if let Some(ref ctrl) = control_tx {
