@@ -8,11 +8,7 @@
   "gtk-layer-shell": true,
   "height": 50,
   "modules-left": [
-    "hyprland/workspaces"
-  ],
-  "modules-right": [
-    "group/pigma",
-    "group/system"
+    "group/pigma"
   ],
   "group/pigma": {
     "orientation": "horizontal",
@@ -29,19 +25,15 @@
       "children-class": "drawer-child"
     }
   },
-  "group/system": {
-    "orientation": "horizontal",
-    "modules": [
-      "battery",
-      "cpu",
-      "memory",
-      "temperature"
-    ],
-    "drawer": {
-      "transition-duration": 300,
-      "transition-left-to-right": true,
-      "children-class": "drawer-child"
-    }
+  "custom/pigma": {
+    "exec": "~/.config/waybar/scripts/pigma",
+    "interval": 1,
+    "tooltip": true,
+    "return-type": "json",
+    "on-click-right": "pigma msg mode",
+    "on-scroll-up": "pigma msg volume +5",
+    "on-scroll-down": "pigma msg volume -5",
+    "format": "{}"
   },
   "custom/pigma#like": {
     "exec": "~/.config/waybar/scripts/pigma --icon like",
@@ -75,16 +67,6 @@
     "interval": "once",
     "return-type": "json",
     "on-click": "~/.config/waybar/scripts/pigma --next",
-    "on-scroll-up": "pigma msg volume +5",
-    "on-scroll-down": "pigma msg volume -5",
-    "format": "{}"
-  },
-  "custom/pigma": {
-    "exec": "~/.config/waybar/scripts/pigma",
-    "interval": 1,
-    "tooltip": true,
-    "return-type": "json",
-    "on-click-right": "pigma msg mode",
     "on-scroll-up": "pigma msg volume +5",
     "on-scroll-down": "pigma msg volume -5",
     "format": "{}"

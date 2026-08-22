@@ -4,6 +4,8 @@
 //! The TUI binds a listener and accepts one-line JSON requests:
 //!
 //! - `{"cmd":"status"}` → the server replies with a serialized `StatusSnapshot`.
+//! - `{"cmd":"subscribe"}` → the server streams each snapshot change as a JSON
+//!   line until the connection closes (event push for waybar / other clients).
 //! - `{"cmd":"msg","action":...}` → the server forwards an `IpcEvent` into the
 //!   app's event channel and replies `{"ok":true}`.
 //!
@@ -23,7 +25,7 @@ use color_eyre::eyre::{OptionExt, WrapErr};
 use serde::{Deserialize, Serialize};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    sync::mpsc,
+    sync::{broadcast, mpsc},
 };
 
 #[cfg(unix)]
@@ -47,6 +49,16 @@ pub enum IpcRequest {
     Status,
     /// Return the current playback queue (`pigma status -L`).
     List,
+    /// Keep the connection open and stream each `StatusSnapshot` change as a
+    /// JSON line. An initial snapshot is sent immediately on connect.
+    Subscribe,
+    /// Search songs across NCM and the enabled sonar providers
+    /// (`pigma msg search <keyword>`). The server replies with a JSON array of
+    /// [`SearchEntry`]; results are registered in-process so a returned id can
+    /// later be played with `pigma msg play <id>`.
+    Search {
+        keyword: String,
+    },
     Msg {
         action: MsgAction,
     },
@@ -59,7 +71,14 @@ pub enum MsgAction {
     Previous,
     Next,
     Pause,
-    Play,
+    /// Resume when paused, start when stopped. With `song_id` set, jump to that
+    /// song in the active queue and play it (`pigma msg play <id>`).
+    Play {
+        song_id: Option<u64>,
+    },
+    /// Play/pause toggle (the TUI spacebar semantics: start when stopped,
+    /// resume when paused, pause when playing).
+    TogglePlay,
     /// Exactly one of `delta` / `absolute` is set:
     /// - `delta`: fraction of 0..=1 to add/subtract (mirrors the TUI's `+`/`-`).
     /// - `absolute`: target fraction of 0..=1.
@@ -72,7 +91,7 @@ pub enum MsgAction {
     Dislike,
     ToggleLike,
     /// Dynamically switch the daemon's queue to another endpoint. `endpoint` is
-    /// an API endpoint name (e.g. `toplist`, `__liked__`); `playlist` optionally
+    /// an API endpoint name (e.g. `toplist`, `liked`); `playlist` optionally
     /// picks the 1-based playlist within list-type endpoints.
     SwitchList {
         endpoint: String,
@@ -86,7 +105,10 @@ pub enum IpcEvent {
     Previous,
     Next,
     Pause,
-    Play,
+    Play {
+        song_id: Option<u64>,
+    },
+    TogglePlay,
     Volume {
         delta: Option<f64>,
         absolute: Option<f64>,
@@ -107,7 +129,8 @@ impl From<MsgAction> for IpcEvent {
             MsgAction::Previous => IpcEvent::Previous,
             MsgAction::Next => IpcEvent::Next,
             MsgAction::Pause => IpcEvent::Pause,
-            MsgAction::Play => IpcEvent::Play,
+            MsgAction::Play { song_id } => IpcEvent::Play { song_id },
+            MsgAction::TogglePlay => IpcEvent::TogglePlay,
             MsgAction::Volume { delta, absolute } => IpcEvent::Volume { delta, absolute },
             MsgAction::Mode => IpcEvent::Mode,
             MsgAction::Like => IpcEvent::Like,
@@ -162,6 +185,23 @@ impl StatusSnapshot {
             liked: state.liked,
         }
     }
+
+    /// Whether `self` differs from `other` in any field that is *not* the
+    /// playback position. The app loop compares snapshots with this before
+    /// deciding to broadcast, so a running track does not spam subscribers on
+    /// every progress tick — position refreshes are instead throttled by time.
+    pub fn meaningfully_differs(&self, other: &Self) -> bool {
+        self.id != other.id
+            || self.name != other.name
+            || self.artist != other.artist
+            || self.album != other.album
+            || self.duration_ms != other.duration_ms
+            || self.volume != other.volume
+            || self.playing != other.playing
+            || self.paused != other.paused
+            || self.mode != other.mode
+            || self.liked != other.liked
+    }
 }
 
 fn mode_key(mode: &PlayMode) -> &'static str {
@@ -202,6 +242,32 @@ impl QueueEntry {
 pub struct QueueSnapshot {
     pub current_index: Option<usize>,
     pub songs: Vec<QueueEntry>,
+}
+
+/// A search hit served to `pigma msg search <keyword>`. `source` tags the
+/// provider: `netease` for NetEase Cloud, otherwise the sonar provider name
+/// (`kugou` / `kuwo` / `bilivideo` / `youtube`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchEntry {
+    pub id: u64,
+    pub name: String,
+    pub singer: String,
+    pub album: String,
+    pub duration_ms: u64,
+    pub source: String,
+}
+
+impl SearchEntry {
+    pub fn from_song(song: &ncm_api::SongInfo, source: &str) -> Self {
+        Self {
+            id: song.id,
+            name: song.name.clone(),
+            singer: song.singer.clone(),
+            album: song.album.clone(),
+            duration_ms: song.duration,
+            source: source.to_string(),
+        }
+    }
 }
 
 fn socket_path() -> PathBuf {
@@ -349,13 +415,16 @@ type AcceptedStream = tokio::net::windows::named_pipe::NamedPipeServer;
 /// Start the IPC server for the running TUI.
 ///
 /// Spawns a background task that accepts connections, answering `status` and
-/// `list` requests from `status_snapshot` / `queue_snapshot`, and forwarding
-/// `msg` requests as `IpcEvent`s into `event_tx`. Returns a guard that removes
-/// the socket file on drop.
+/// `list` requests from `status_snapshot` / `queue_snapshot`, streaming
+/// snapshot changes to `subscribe` clients via `status_tx`, answering `search`
+/// requests with `searcher`, and forwarding `msg` requests as `IpcEvent`s into
+/// `event_tx`. Returns a guard that removes the socket file on drop.
 pub fn start_server(
     status_snapshot: Arc<Mutex<StatusSnapshot>>,
     queue_snapshot: Arc<Mutex<QueueSnapshot>>,
+    status_tx: broadcast::Sender<StatusSnapshot>,
     event_tx: mpsc::UnboundedSender<Event>,
+    searcher: Arc<crate::app::SearchEngine>,
 ) -> IpcServerGuard {
     let listener = match IpcListener::bind() {
         Some(l) => l,
@@ -370,8 +439,10 @@ pub fn start_server(
                     let snapshot = Arc::clone(&status_snapshot);
                     let queue = Arc::clone(&queue_snapshot);
                     let tx = event_tx.clone();
+                    let status_tx = status_tx.clone();
+                    let searcher = Arc::clone(&searcher);
                     tokio::spawn(async move {
-                        handle_connection(stream, snapshot, queue, tx).await;
+                        handle_connection(stream, snapshot, queue, status_tx, tx, searcher).await;
                     });
                 }
                 None => {
@@ -418,7 +489,9 @@ async fn handle_connection<S>(
     stream: S,
     snapshot: Arc<Mutex<StatusSnapshot>>,
     queue: Arc<Mutex<QueueSnapshot>>,
+    status_tx: broadcast::Sender<StatusSnapshot>,
     event_tx: mpsc::UnboundedSender<Event>,
+    searcher: Arc<crate::app::SearchEngine>,
 ) where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
@@ -434,14 +507,21 @@ async fn handle_connection<S>(
             return;
         }
     };
-    let reply = match request {
+    let mut stream = stream.into_inner();
+    match request {
         IpcRequest::Status => {
-            let guard = snapshot.lock().unwrap();
-            serde_json::to_string(&*guard).unwrap_or_default()
+            let reply = {
+                let guard = snapshot.lock().unwrap();
+                serde_json::to_string(&*guard).unwrap_or_default()
+            };
+            let _ = write_reply(&mut stream, &reply).await;
         }
         IpcRequest::List => {
-            let guard = queue.lock().unwrap();
-            serde_json::to_string(&*guard).unwrap_or_default()
+            let reply = {
+                let guard = queue.lock().unwrap();
+                serde_json::to_string(&*guard).unwrap_or_default()
+            };
+            let _ = write_reply(&mut stream, &reply).await;
         }
         IpcRequest::Msg { action } => {
             let event: IpcEvent = action.into();
@@ -449,13 +529,64 @@ async fn handle_connection<S>(
             if sent.is_err() {
                 log::error!("ipc: failed to forward msg event: receiver dropped");
             }
-            r#"{"ok":true}"#.to_string()
+            let _ = write_reply(&mut stream, r#"{"ok":true}"#).await;
         }
-    };
-    let mut framed = reply;
+        IpcRequest::Search { keyword } => {
+            let results = searcher.search(&keyword).await;
+            let reply = serde_json::to_string(&results).unwrap_or_default();
+            let _ = write_reply(&mut stream, &reply).await;
+        }
+        IpcRequest::Subscribe => stream_updates(stream, snapshot, status_tx).await,
+    }
+}
+
+/// Write a single JSON line (terminated by `\n`) to the client stream.
+async fn write_reply<S>(mut stream: S, reply: &str) -> std::io::Result<()>
+where
+    S: tokio::io::AsyncWrite + Unpin,
+{
+    let mut framed = reply.to_string();
     framed.push('\n');
-    let mut stream = stream.into_inner();
-    let _ = stream.write_all(framed.as_bytes()).await;
+    stream.write_all(framed.as_bytes()).await
+}
+
+/// `subscribe` mode: send the current snapshot immediately, then stream every
+/// broadcast update as a JSON line until the client disconnects or the app
+/// shuts the channel down.
+async fn stream_updates<S>(
+    mut stream: S,
+    snapshot: Arc<Mutex<StatusSnapshot>>,
+    status_tx: broadcast::Sender<StatusSnapshot>,
+) where
+    S: tokio::io::AsyncWrite + Unpin,
+{
+    let mut rx = status_tx.subscribe();
+    let initial = snapshot.lock().unwrap().clone();
+    let line = serde_json::to_string(&initial).unwrap_or_default();
+    if write_reply(&mut stream, &line).await.is_err() {
+        return;
+    }
+    loop {
+        match rx.recv().await {
+            Ok(s) => {
+                let line = serde_json::to_string(&s).unwrap_or_default();
+                if write_reply(&mut stream, &line).await.is_err() {
+                    return;
+                }
+            }
+            // A slow subscriber fell behind; resend the current snapshot so it
+            // catches up instead of missing the intermediate state.
+            Err(broadcast::error::RecvError::Lagged(_)) => {
+                let current = snapshot.lock().unwrap().clone();
+                let line = serde_json::to_string(&current).unwrap_or_default();
+                if write_reply(&mut stream, &line).await.is_err() {
+                    return;
+                }
+            }
+            // Sender dropped (app quitting) — close the stream.
+            Err(_) => return,
+        }
+    }
 }
 
 /// Connect to the running TUI's listener, returning a descriptive error when no
@@ -464,7 +595,7 @@ async fn connect() -> color_eyre::Result<ClientStream> {
     let path = resolve_socket_path();
     client_connect(&path)
         .await
-        .wrap_err("pigma is not running (socket not found)")
+        .wrap_err("pigma is not running (start the TUI or `pigma -d`, or check --socket)")
 }
 
 /// Send a `status` request and return the live snapshot.
@@ -499,6 +630,43 @@ pub async fn fetch_queue() -> color_eyre::Result<QueueSnapshot> {
         .await
         .wrap_err("failed to read list response")?;
     serde_json::from_str(&buf).wrap_err("invalid list response")
+}
+
+/// Subscribe to status updates (`{"cmd":"subscribe"}`). Sends the request and
+/// returns a line reader over the open connection; every subsequent
+/// `StatusSnapshot` change is delivered as one JSON line. The connection stays
+/// open until the daemon quits or the stream is dropped.
+pub async fn subscribe_status() -> color_eyre::Result<impl tokio::io::AsyncBufRead + Unpin> {
+    let mut stream = connect().await?;
+    stream
+        .write_all(br#"{"cmd":"subscribe"}"#)
+        .await
+        .wrap_err("failed to send subscribe request")?;
+    stream.write_all(b"\n").await?;
+    Ok(BufReader::new(stream))
+}
+
+/// Send a `search` request (`pigma msg search <keyword>`) and return the
+/// matching songs, tagged by source and registered in the daemon for a later
+/// `pigma msg play <id>`.
+pub async fn search_songs(keyword: &str) -> color_eyre::Result<Vec<SearchEntry>> {
+    let mut stream = connect().await?;
+    let request = serde_json::to_string(&IpcRequest::Search {
+        keyword: keyword.to_string(),
+    })
+    .wrap_err("failed to serialize search request")?;
+    stream
+        .write_all(request.as_bytes())
+        .await
+        .wrap_err("failed to send search request")?;
+    stream.write_all(b"\n").await?;
+    let mut buf = String::new();
+    let mut reader = BufReader::new(stream);
+    reader
+        .read_line(&mut buf)
+        .await
+        .wrap_err("failed to read search response")?;
+    serde_json::from_str(&buf).wrap_err("invalid search response")
 }
 
 /// Send a `msg` action to the running TUI. Returns once the server confirms.

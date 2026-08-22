@@ -192,15 +192,22 @@ cargo build --release
 查询/控制一个**正在运行**的 pigma 实例（交互界面或守护进程均可），
 通过 `~/.cache/pigma/pigma.sock` 上的 Unix socket 通信：
 
+```bash
+# 生成 shell 补全脚本（bash / zsh / fish / elvish / powershell）
+pigma completions bash    # 例如重定向到 ~/.local/share/bash-completion/completions/pigma
+```
+
 | 命令 | 说明 |
 |---|---|
 | `pigma status` | 查询状态（默认 plain 文本） |
 | `pigma status --json` | 以 JSON 输出 |
 | `pigma status -L` | 列出当前播放队列（`>` 标记当前曲目），`-L --json` 输出原始 `QueueSnapshot` |
 | `pigma status --template "{name}  {artist}  {current}/{duration}  {status}  vol {volume}%"` | 自定义 plain 输出模板 |
-| `pigma list <endpoint>` | 列出端点解析出的歌单/歌曲（带序号），序号即 `--playlist N` 用的下标；无需运行实例 |
+| `pigma msg list` | 列出当前播放队列（`▶` 标记当前曲目），`--json` 输出原始 `QueueSnapshot` |
 | `pigma msg next` / `pigma msg previous` | 下一首 / 上一首 |
-| `pigma msg pause` / `pigma msg play` | 暂停 / 播放 |
+| `pigma msg pause` / `pigma msg play` | 暂停 / 播放（`pigma msg play <song-id>` 按 id 跳播队列中的歌曲） |
+| `pigma msg search <keyword>` | 搜索并返回歌曲数据（NCM + 已启用 sonar 源，标出 `source` 和 `id`），再 `pigma msg play <id>` 播放选中的那首 |
+| `pigma msg toggle_play` | 播放/暂停切换 |
 | `pigma msg mode` | 切换播放模式 |
 | `pigma msg like` / `pigma msg dislike` | 喜欢 / 不喜欢 |
 | `pigma msg toggle_like` | 喜欢/取消喜欢（切换当前曲目） |
@@ -277,21 +284,21 @@ Send-Pigma '{"cmd":"msg","action":{"action":"volume","absolute":0.75}}'  # 音�
 
 | 选项 | 说明 |
 |---|---|
-| `pigma -d` | 等价于 `pigma -d __liked__` |
+| `pigma -d` | 等价于 `pigma -d liked` |
 | `pigma -d toplist` | 加载指定端点 |
 | `pigma --daemon user_cloud_disk` | `-d` 的全写形式 |
-| `pigma -d toplist --playlist 3` | 歌单/榜单端点用 `--playlist N` 选第 N 个（1 起始） |
+| `pigma -d toplist:3` | 歌单/榜单端点用 `:N` 选第 N 个（1 起始） |
 
 支持的内置 API 与导航项一致：
 
 | 端点 | 类型 | 说明 |
 |---|---|---|
-| `__liked__` | 歌曲（默认） | 我喜欢的音乐，需登录 |
+| `liked` | 歌曲（默认） | 我喜欢的音乐，需登录 |
 | `recommend_songs` | 歌曲 | 每日推荐歌曲 |
 | `user_cloud_disk` | 歌曲 | 我的云盘 |
-| `__download__` | 歌曲 | 本地下载 |
-| `__local_music__` | 歌曲 | 本地音乐 |
-| `__recent__` | 歌曲 | 最近播放 |
+| `download` | 歌曲 | 本地下载 |
+| `local_music` | 歌曲 | 本地音乐 |
+| `recent` | 歌曲 | 最近播放 |
 | `recommend_resource` | 歌单 | 每日推荐歌单 |
 | `toplist` | 歌单 | 排行榜 |
 | `top_song_list` | 歌单 | 热门歌单 |
@@ -303,13 +310,25 @@ Send-Pigma '{"cmd":"msg","action":{"action":"volume","absolute":0.75}}'  # 音�
 | `search` | 其他 | 搜索热榜（无可播队列） |
 | `top_singers` | 其他 | 热门歌手（无可播队列） |
 
-歌单类端点解析出来是一组歌单，默认加载第一个；可用 `--playlist N` 选择第 N 个（1 起始）。先运行 `pigma list <endpoint>` 查看可用的歌单及其序号：
+歌单类端点解析出来是一组歌单，默认加载第一个；`-d` 可用 `ENDPOINT:N`（如 `pigma -d toplist:3`）选择第 N 个（1 起始），`msg switch-list` 可用 `--playlist N`。序号与 TUI 中列表显示的顺序一致，可先在 TUI 里查看：
 
 启动后即用 `pigma status` / `pigma msg` 控制；`SIGINT`/`SIGTERM` 会保存会话并干净退出。
 
 **Waybar 集成**：
 
- - 参考[waybar](./waybar)
+  - 参考[waybar](./waybar)。状态模块用 bash 脚本 `waybar/pigma`，每秒调 `pigma status --json` 获取状态并格式化为 waybar JSON。脚本内置 `ensure_daemon`，首次调用时自动启动 daemon。
+
+```jsonc
+// ~/.config/waybar/config.jsonc 核心片段
+"custom/pigma": {
+  "exec": "~/.config/waybar/scripts/pigma",
+  "interval": 1,
+  "return-type": "json",
+  "on-click-right": "pigma msg mode",
+  "on-scroll-up": "pigma msg volume +5",
+  "on-scroll-down": "pigma msg volume -5"
+}
+```
 
 ## Configuration
 Config file location:
@@ -443,13 +462,13 @@ Any API endpoint can have a `[columns.overrides.{key}]` entry. Available keys:
 | `top_song_list`      | songlist     | 歌单         |
 | `user_radio_sublist` | songlist     | 电台         |
 | `user_cloud_disk`    | songs        | 我的音乐云盘 |
-| `__liked__`          | songs        | 我喜欢的音乐 |
+| `liked`              | songs        | 我喜欢的音乐 |
 | `user_song_list`     | songlist     | 我的歌单     |
-| `__local_music__`    | songs        | 本地音乐     |
-| `__recent__`         | songs        | 最近播放     |
+| `local_music`        | songs        | 本地音乐     |
+| `recent`             | songs        | 最近播放     |
 | `top_singers`        | singers      | 热门歌手     |
 | `search`             | songs        | 搜索-热搜榜  |
-| `__download__`       | —            | 下载管理     |
+| `download`           | —            | 下载管理     |
 
 ### Navigation layout
 

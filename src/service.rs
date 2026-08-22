@@ -12,7 +12,7 @@ use crate::{
 /// Navigation/content endpoints backed by the NetEase Cloud Music API.
 ///
 /// `parse` maps the string keys used in the navigation tree (and persisted
-/// playlist ids like `__liked__`, `__download__`, `__local_music__`) onto a
+/// playlist ids like `liked`, `download`, `local_music`) onto a
 /// concrete endpoint resolved by [`ApiService`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ApiEndpoint {
@@ -43,14 +43,14 @@ impl ApiEndpoint {
             "top_song_list" => Some(ApiEndpoint::TopSongList),
             "user_radio_sublist" => Some(ApiEndpoint::UserRadioSublist),
             "user_cloud_disk" => Some(ApiEndpoint::UserCloudDisk),
-            "__liked__" => Some(ApiEndpoint::LikedSongs),
+            "liked" | "__liked__" => Some(ApiEndpoint::LikedSongs),
             "user_song_list" => Some(ApiEndpoint::UserSongList),
             "user_created_song_list" => Some(ApiEndpoint::UserCreatedSongList),
             "user_subscribed_song_list" => Some(ApiEndpoint::UserSubscribedSongList),
             "album_sublist" => Some(ApiEndpoint::SavedAlbums),
-            "__download__" => Some(ApiEndpoint::Download),
-            "__local_music__" => Some(ApiEndpoint::LocalMusic),
-            "__recent__" => Some(ApiEndpoint::Recent),
+            "download" | "__download__" => Some(ApiEndpoint::Download),
+            "local_music" | "__local_music__" => Some(ApiEndpoint::LocalMusic),
+            "recent" | "__recent__" => Some(ApiEndpoint::Recent),
             "search" => Some(ApiEndpoint::Search),
             "top_singers" => Some(ApiEndpoint::TopSingers),
             _ => None,
@@ -195,7 +195,7 @@ impl ApiService {
     /// Resolve an endpoint into a displayable [`ContentState`], handling the local
     /// sources (`Download` / `LocalMusic`) and `LikedSongs` that [`resolve_content`]
     /// deliberately leaves to its caller. Shared by `App::load_endpoint` (which then
-    /// loads the resolved songs into the queue) and the CLI `list` command, so the
+    /// loads the resolved songs into the queue) and the TUI's content page, so the
     /// endpoint→content mapping lives in exactly one place.
     pub async fn resolve_endpoint_content(
         &self,

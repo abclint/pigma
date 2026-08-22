@@ -1,3 +1,21 @@
+## [0.2.13] - 2026-08-22
+
+### 🚀 Features
+
+
+- *(cli/waybar)* Remove native waybar output (`--waybar`); waybar integration now uses a standalone bash script (`waybar/pigma`) that calls `pigma status --json` per invocation, with `ensure_daemon` for auto-start
+- *(cli)* Add `pigma msg play <song-id>` to jump to a song in the queue by id, and `pigma msg toggle_play` play/pause toggle (akirco)
+- *(cli)* Add `pigma msg search <keyword>`: the daemon searches NCM + sonar sources, returns songs tagged by source, and registers them so `pigma msg play <id>` can enqueue and play a search result across instances (sonar synthetic ids resolve in-process) (akirco)
+- *(cli)* Move queue listing into `pigma msg list` (reusing the TUI queue-table rendering, `▶` marks the current song); drop the standalone `pigma list <endpoint>` command so the CLI only talks to a running instance (akirco)
+- *(cli)* Add `pigma completions <shell>` to generate shell completion scripts (bash/zsh/fish/elvish/powershell); `msg` actions are now a clap `ValueEnum`, so `pigma msg <Tab>` completes them (with aliases) (akirco)
+- *(cli)* Fold the global `--playlist` into `-d` via `ENDPOINT:N` (e.g. `pigma -d toplist:3`); the old global flag stays as a hidden backward-compatible alias. `msg switch-list --playlist N` is unchanged (akirco)
+
+
+### 🐛 Bug Fixes
+
+- *(playback)* Rebuild the audio device when the output stream dies (#61): Bluetooth disconnect/reconnect no longer leaves playback silent. The sink is now owned by the player task; fatal cpal stream errors (`DeviceNotAvailable`/`StreamInvalidated`/backend device loss on WASAPI/CoreAudio/ALSA) and a frozen-position watchdog (suppressed during recent network underruns) both trigger a rebuild that resumes at the last position. The player also follows system default-output changes (debounced, stable-id based), so after a Bluetooth headset reconnects playback moves back to it automatically — macOS, Windows and Linux alike
+
+
 ## [0.2.12] - 2026-08-16
 
 ### 🚀 Features

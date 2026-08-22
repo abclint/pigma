@@ -63,6 +63,7 @@ case "${1:-}" in
     "prev") text=""; cls="button" ;;
     "next") text=""; cls="button" ;;
     "play")
+        ensure_daemon
         state=$("$PIGMA_BIN" status --json 2>/dev/null)
         playing=$(jq -r '.playing // false' <<<"$state" 2>/dev/null)
         paused=$(jq -r '.paused // false' <<<"$state" 2>/dev/null)
@@ -75,7 +76,8 @@ case "${1:-}" in
         fi
         ;;
     "like")
-state=$("$PIGMA_BIN" status --json 2>/dev/null)
+        ensure_daemon
+        state=$("$PIGMA_BIN" status --json 2>/dev/null)
         liked=$(jq -r '.liked // false' <<<"$state" 2>/dev/null)
         if [ "$liked" = "true" ]; then
             text=""
@@ -100,21 +102,17 @@ if [ -z "$state" ]; then
     exit 0
 fi
 
-name=$(jq -r '.name' <<<"$state")
+# 单次 jq 提取全部字段，逐行输出避免空格分词
+mapfile -t f < <(jq -r '[.name // "", .artist // "", .album // "", .playing, .paused, .position_ms, .duration_ms, .volume, .mode // "", .liked] | .[]' <<<"$state" 2>/dev/null)
+name="${f[0]}" artist="${f[1]}" album="${f[2]}"
+playing="${f[3]}" paused="${f[4]}"
+position="${f[5]}" duration="${f[6]}"
+volume="${f[7]}" mode="${f[8]}" liked="${f[9]}"
+
 if [ -z "$name" ]; then
     echo '{"text":"♪  idle","class":"idle","tooltip":"no song playing","alt":"idle"}'
     exit 0
 fi
-
-artist=$(jq -r '.artist' <<<"$state")
-album=$(jq -r '.album' <<<"$state")
-playing=$(jq -r '.playing' <<<"$state")
-paused=$(jq -r '.paused' <<<"$state")
-position=$(jq -r '.position_ms' <<<"$state")
-duration=$(jq -r '.duration_ms' <<<"$state")
-volume=$(jq -r '.volume' <<<"$state")
-mode=$(jq -r '.mode' <<<"$state")
-liked=$(jq -r '.liked' <<<"$state")
 
 if [ "$playing" = "true" ]; then
     if [ "$paused" = "true" ]; then
@@ -133,7 +131,7 @@ else
 fi
 
 if [ "$liked" = "true" ]; then
-    heart=""
+    heart=""
 else
     heart=""
 fi
@@ -142,19 +140,18 @@ vol_pct=$(awk -v v="$volume" 'BEGIN{printf "%.0f", v*100}')
 # 跑马灯：仅播放中且文字超长时按时间滚动（PIGMA_WINDOW 窗口字符数, PIGMA_SPEED 每秒字符数）；
 # 暂停/停止/长度合适时静态显示全名，不额外耗性能。
 full="$name — $artist"
-len=$(printf '%s' "$full" | wc -m)
+len=${#full}
 win="${PIGMA_WINDOW:-20}"
-gap=8
 if [ "$playing" = "true" ] && [ "$paused" != "true" ] && [ "$len" -gt "$win" ]; then
     speed="${PIGMA_SPEED:-7}"
+    gap=8
     span=$((len + gap))
     now_ms=$(( $(date +%s%N) / 1000000 ))
     pos=$(( (now_ms / 1000 * speed) % span ))
-    text2="$full$(printf '%*s' "$gap" '')$full"
-    disp=$(printf '%s' "$text2" | cut -c"$((pos + 1))-$((pos + win))")
-    text="$disp"
+    doubled="${full}$(printf '%*s' "$gap" '')${full}"
+    text="$icon ${doubled:$pos:$win}"
 else
-    text="$full"
+    text="$icon $full"
 fi
 
 tooltip="$name

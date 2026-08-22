@@ -1,10 +1,10 @@
-//! CLI entry: `pigma status` / `pigma msg` / `pigma list` subcommands plus the
-//! argument parser. The TUI itself runs when no subcommand is given.
+//! CLI entry: `pigma status` / `pigma msg` subcommands plus the argument
+//! parser. The TUI itself runs when no subcommand is given.
 
-use std::{path::PathBuf, sync::Arc};
+use std::path::PathBuf;
 
 use clap::{
-    Parser, Subcommand,
+    Parser, Subcommand, ValueHint,
     builder::{Styles, styling::AnsiColor},
 };
 
@@ -29,7 +29,7 @@ const STYLES: Styles = Styles::styled()
     version,
     disable_version_flag = true,
     about = "A netease cloud music client",
-    long_about = "A netease cloud music client.\n\nNo subcommand launches the TUI; `status` / `msg` / `list` query or control a running instance.",
+    long_about = "A netease cloud music client.\n\nNo subcommand launches the TUI; `status` / `msg` query or control a running instance.",
     args_conflicts_with_subcommands = true,
     styles = STYLES
 )]
@@ -37,17 +37,18 @@ pub struct Cli {
     /// Print version and exit.
     #[arg(short = 'v', long = "version", action = clap::ArgAction::Version)]
     pub version: Option<bool>,
-    /// Run headless, loading an endpoint (default `__liked__`).
+    /// Run headless, loading an endpoint (default `liked`). Suffix `:N` picks
+    /// the N-th playlist of a list endpoint, e.g. `toplist:3`.
     #[arg(
         long,
         short = 'd',
-        value_name = "ENDPOINT",
+        value_name = "ENDPOINT[:N]",
         num_args = 0..=1,
-        default_missing_value = "__liked__"
+        default_missing_value = "liked"
     )]
     pub daemon: Option<String>,
     /// Load the N-th playlist of the endpoint (1-based).
-    #[arg(long, value_name = "INDEX")]
+    #[arg(long, value_name = "INDEX", requires = "daemon", hide = true, value_hint = ValueHint::Other)]
     pub playlist: Option<usize>,
     /// IPC socket path.
     #[arg(long, value_name = "SOCKET")]
@@ -62,7 +63,7 @@ pub enum Command {
     Status {
         /// Output template: {name} {artist} {album} {duration} {position}
         /// {volume} {status} {mode} {id} {liked}. Defaults to config.
-        #[arg(long, default_value = "")]
+        #[arg(long, default_value = "", value_hint = ValueHint::Other)]
         template: String,
         /// Output as JSON.
         #[arg(long)]
@@ -74,26 +75,72 @@ pub enum Command {
         #[arg(long, value_name = "SOCKET")]
         socket: Option<PathBuf>,
     },
-    /// List an endpoint's playlists (or songs) with 1-based indexes.
-    List {
-        /// API endpoint: `toplist`, `top_song_list`, `__liked__`, etc.
-        endpoint: String,
-    },
     /// Control the running instance.
     Msg {
-        /// Action: previous | next | pause | play | volume | mode | like |
-        /// dislike | toggle_like | switch-list.
-        action: String,
-        /// Value for `volume` (`75`/`+5`/`-5`) or the endpoint for `switch-list`.
-        #[arg(allow_hyphen_values = true)]
+        /// Playback action. Possible values are listed below.
+        action: MsgActionArg,
+        /// Value for `play` (a song id), `search` (a keyword), `volume`
+        /// (`75`/`+5`/`-5`), the endpoint for `switch-list`/`list`, or omitted.
+        #[arg(allow_hyphen_values = true, value_hint = ValueHint::Other)]
         value: Option<String>,
         /// Playlist index for `switch-list` (1-based).
-        #[arg(long, value_name = "INDEX")]
+        #[arg(long, value_name = "INDEX", value_hint = ValueHint::Other)]
         playlist: Option<usize>,
+        /// Output the queue as JSON (`list` with no value).
+        #[arg(long)]
+        json: bool,
         /// IPC socket path.
         #[arg(long, value_name = "SOCKET")]
         socket: Option<PathBuf>,
     },
+    /// Generate a shell completion script and print it to stdout.
+    Completions {
+        /// Target shell: bash | zsh | fish | elvish | powershell.
+        #[arg(value_parser = ["bash", "zsh", "fish", "elvish", "powershell"])]
+        shell: String,
+    },
+}
+
+/// `pigma msg` action selector. The `#[value(name)]`/`#[value(alias)]` names are
+/// what the shell-completion script offers (and what `parse_msg_action` accepts).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum MsgActionArg {
+    /// Go to the previous song.
+    #[value(name = "previous", alias = "prev")]
+    Previous,
+    /// Go to the next song.
+    Next,
+    /// Pause playback.
+    Pause,
+    /// Play / resume, or play a specific song id in the queue.
+    Play,
+    /// Toggle play/pause (start when stopped, resume when paused).
+    #[value(
+        name = "toggle_play",
+        alias = "play_pause",
+        alias = "toggle-play",
+        alias = "play-pause"
+    )]
+    TogglePlay,
+    /// Switch the queue to another endpoint (optionally `--playlist N`).
+    #[value(name = "switch-list", alias = "switch")]
+    SwitchList,
+    /// Set (absolute 0-100) or adjust (`+5`/`-5`) the volume.
+    Volume,
+    /// Cycle the playback mode.
+    Mode,
+    /// Like the current song.
+    Like,
+    /// Dislike the current song.
+    Dislike,
+    /// Toggle like on the current song.
+    #[value(name = "toggle_like", alias = "unlike", alias = "toggle")]
+    ToggleLike,
+    /// Print the playback queue (`▶` marks the current song), or switch queues
+    /// when given an endpoint.
+    List,
+    /// Search songs across NCM + sonar sources.
+    Search,
 }
 
 /* -------------------------------------------------------------------------- */
@@ -136,101 +183,109 @@ pub async fn status(template: &str, json: bool, list: bool) -> color_eyre::Resul
     Ok(())
 }
 
-/// `pigma list` handler: resolve an endpoint without a running daemon and print
-/// the playlists (or songs) it yields, numbered by their 1-based index.
-pub async fn list(endpoint: &str) -> color_eyre::Result<()> {
-    let _ = rustls::crypto::ring::default_provider().install_default();
-    let config = Config::load();
-
-    let cookie_path = crate::utils::pigma_config_dir().join("cookies.json");
-    let mut api_builder = ncm_api::NcmClient::builder().cookie_path(cookie_path);
-    let ncm_proxy = match config.proxy_target {
-        crate::config::ProxyTarget::Reversed | crate::config::ProxyTarget::Both => {
-            config.proxy.as_str()
-        }
-        _ => "",
-    };
-    if !ncm_proxy.is_empty() {
-        api_builder = api_builder.proxy(ncm_proxy);
+/// Render the playback queue the way the TUI's queue table does: `▶` marks the
+/// currently playing song, rows show a 1-based index, title, artist and duration.
+fn render_queue(queue: &ipc::QueueSnapshot) -> String {
+    let current = queue.current_index;
+    let mut out = String::new();
+    for (i, song) in queue.songs.iter().enumerate() {
+        let marker = if Some(i) == current { "▶" } else { " " };
+        use std::fmt::Write;
+        let _ = writeln!(
+            out,
+            "{marker}{:02}  {:<24}  {:<20}  {}",
+            i + 1,
+            song.name,
+            song.singer,
+            format_duration(song.duration_ms)
+        );
     }
-    let api = Arc::new(api_builder.build()?);
-
-    let cache_dir = {
-        let path = std::path::Path::new(&config.cache.cache_dir);
-        if path.is_absolute() {
-            std::path::PathBuf::from(&config.cache.cache_dir)
-        } else {
-            crate::utils::pigma_cache_dir().join(&config.cache.cache_dir)
-        }
-    };
-    let cache = Arc::new(crate::cache::CacheManager::new(
-        cache_dir,
-        crate::utils::pigma_cache_dir(),
-        config.cache.cache_template.clone(),
-    ));
-    let service = crate::service::ApiService::new(api.clone(), cache);
-
-    let uid = if api.is_logged_in() {
-        api.login_status().await.ok().map(|info| info.uid)
-    } else {
-        None
-    };
-
-    let api_ep = crate::service::ApiEndpoint::parse(endpoint).unwrap_or_else(|| {
-        eprintln!("未知端点: {endpoint}");
-        std::process::exit(1);
-    });
-
-    let content = service
-        .resolve_endpoint_content(api_ep, uid, config.search_limit)
-        .await;
-
-    match content {
-        crate::state::ContentState::SongLists(lists) => {
-            for (i, list) in lists.iter().enumerate() {
-                println!("{:>3}. {}", i + 1, list.name);
-            }
-        }
-        crate::state::ContentState::TopLists(lists) => {
-            for (i, list) in lists.iter().enumerate() {
-                println!("{:>3}. {}", i + 1, list.name);
-            }
-        }
-        crate::state::ContentState::Songs(songs) => {
-            for (i, song) in songs.iter().enumerate() {
-                println!("{:>3}. {} - {}", i + 1, song.name, song.singer);
-            }
-        }
-        crate::state::ContentState::Error(e) => {
-            eprintln!("{endpoint}: {e}");
-        }
-        _ => eprintln!("{endpoint}: 无可列出的内容"),
-    }
-    Ok(())
+    out
 }
 
-/// `pigma msg` handler.
+fn print_queue(queue: &ipc::QueueSnapshot) {
+    print!("{}", render_queue(queue));
+}
+
+/// `pigma msg` handler. `list` (no value) prints the live playback queue, and
+/// `search` is a request/response command (the daemon returns matching songs and
+/// registers them for a later `pigma msg play <id>`); everything else is a
+/// fire-and-forget control action.
 pub async fn msg(
-    action: &str,
+    action: MsgActionArg,
     value: Option<&str>,
     playlist: Option<usize>,
+    json: bool,
 ) -> color_eyre::Result<()> {
-    let action = parse_msg_action(action, value, playlist)?;
-    ipc::send_msg(action).await?;
-    Ok(())
+    match action {
+        MsgActionArg::List => {
+            // `pigma msg list <endpoint>` keeps the old switch-list alias;
+            // `pigma msg list` with no value prints the live playback queue.
+            if let Some(endpoint) = value {
+                let action = MsgAction::SwitchList {
+                    endpoint: endpoint.to_string(),
+                    playlist,
+                };
+                ipc::send_msg(action).await?;
+                return Ok(());
+            }
+            let queue = ipc::fetch_queue().await?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&queue)?);
+            } else {
+                print_queue(&queue);
+            }
+            Ok(())
+        }
+        MsgActionArg::Search => {
+            let keyword = value.ok_or_else(|| {
+                color_eyre::eyre::eyre!(
+                    "search requires a keyword (e.g. `pigma msg search 周杰伦`)"
+                )
+            })?;
+            let results = ipc::search_songs(keyword).await?;
+            if results.is_empty() {
+                println!("没有找到与「{keyword}」相关的歌曲");
+                return Ok(());
+            }
+            for entry in &results {
+                println!(
+                    "{:<10} {:<20} {} - {}",
+                    entry.source, entry.id, entry.name, entry.singer
+                );
+            }
+            Ok(())
+        }
+        other => {
+            let action = parse_msg_action(other, value, playlist)?;
+            ipc::send_msg(action).await?;
+            Ok(())
+        }
+    }
 }
 
 fn parse_msg_action(
-    action: &str,
+    action: MsgActionArg,
     value: Option<&str>,
     playlist: Option<usize>,
 ) -> color_eyre::Result<MsgAction> {
     match action {
-        "previous" | "prev" => Ok(MsgAction::Previous),
-        "next" => Ok(MsgAction::Next),
-        "pause" => Ok(MsgAction::Pause),
-        "play" => Ok(MsgAction::Play),
-        "switch-list" | "list" | "switch" => {
+        MsgActionArg::Previous => Ok(MsgAction::Previous),
+        MsgActionArg::Next => Ok(MsgAction::Next),
+        MsgActionArg::Pause => Ok(MsgAction::Pause),
+        MsgActionArg::Play => {
+            let song_id = match value {
+                None => None,
+                Some(v) => Some(v.parse().map_err(|_| {
+                    color_eyre::eyre::eyre!(
+                        "invalid song id `{v}` (expected a number, or omit to play/resume)"
+                    )
+                })?),
+            };
+            Ok(MsgAction::Play { song_id })
+        }
+        MsgActionArg::TogglePlay => Ok(MsgAction::TogglePlay),
+        MsgActionArg::SwitchList => {
             let endpoint = value.ok_or_else(|| {
                 color_eyre::eyre::eyre!(
                     "switch-list requires an endpoint (e.g. `pigma msg switch-list toplist`)"
@@ -241,19 +296,18 @@ fn parse_msg_action(
                 playlist,
             })
         }
-        "volume" => {
+        MsgActionArg::Volume => {
             let value = value.ok_or_else(|| {
                 color_eyre::eyre::eyre!("volume requires a value like `75`, `+5` or `-5`")
             })?;
             parse_volume(value)
         }
-        "mode" => Ok(MsgAction::Mode),
-        "like" => Ok(MsgAction::Like),
-        "dislike" => Ok(MsgAction::Dislike),
-        "toggle_like" | "unlike" | "toggle" => Ok(MsgAction::ToggleLike),
-        other => Err(color_eyre::eyre::eyre!(
-            "unknown action `{other}` (expected previous/next/pause/play/switch-list/volume/mode/like/dislike/toggle_like)"
-        )),
+        MsgActionArg::Mode => Ok(MsgAction::Mode),
+        MsgActionArg::Like => Ok(MsgAction::Like),
+        MsgActionArg::Dislike => Ok(MsgAction::Dislike),
+        MsgActionArg::ToggleLike => Ok(MsgAction::ToggleLike),
+        // Handled above in `msg` before parsing.
+        MsgActionArg::List | MsgActionArg::Search => unreachable!(),
     }
 }
 
@@ -311,6 +365,59 @@ fn format_status(template: &str, s: &StatusSnapshot) -> String {
         .replace("{liked}", if s.liked { "true" } else { "false" })
 }
 
+/// `pigma completions <shell>` handler: print a shell completion script for the
+/// `pigma` CLI to stdout.
+fn completions(shell: &str) -> color_eyre::Result<()> {
+    let mut cmd = <Cli as clap::CommandFactory>::command();
+    let mut out = std::io::stdout();
+    match shell {
+        "bash" => clap_complete::generate(clap_complete::shells::Bash, &mut cmd, "pigma", &mut out),
+        "zsh" => clap_complete::generate(clap_complete::shells::Zsh, &mut cmd, "pigma", &mut out),
+        "fish" => clap_complete::generate(clap_complete::shells::Fish, &mut cmd, "pigma", &mut out),
+        "elvish" => {
+            clap_complete::generate(clap_complete::shells::Elvish, &mut cmd, "pigma", &mut out)
+        }
+        "powershell" => clap_complete::generate(
+            clap_complete::shells::PowerShell,
+            &mut cmd,
+            "pigma",
+            &mut out,
+        ),
+        other => {
+            color_eyre::eyre::bail!(
+                "unsupported shell `{other}` (expected bash/zsh/fish/elvish/powershell)"
+            )
+        }
+    }
+    Ok(())
+}
+
+/// Split a `-d` value into its endpoint and optional 1-based playlist index.
+/// Accepts both `endpoint` and `endpoint:N` (e.g. `toplist:3`). The legacy
+/// global `--playlist` fallback stays for backward compatibility.
+fn parse_daemon_endpoint(
+    value: &str,
+    playlist: Option<usize>,
+) -> color_eyre::Result<(String, Option<usize>)> {
+    if let Some((ep, idx)) = value.rsplit_once(':')
+        && !ep.is_empty()
+        && let Ok(n) = idx.parse::<usize>()
+        && n > 0
+    {
+        return Ok((ep.to_string(), Some(n)));
+    }
+    if playlist.is_some() {
+        return Ok((value.to_string(), playlist));
+    }
+    // A trailing `:N` that failed to parse is a user error, not an endpoint.
+    if value.contains(':') {
+        color_eyre::eyre::bail!(
+            "invalid playlist index in `{value}` (expected `ENDPOINT:N` with N > 0)"
+        );
+    }
+    Ok((value.to_string(), None))
+}
+
 pub async fn run_cli(mut cli: Cli) -> color_eyre::Result<Option<App>> {
     let socket = match &cli.command {
         Some(Command::Status {
@@ -340,13 +447,14 @@ pub async fn run_cli(mut cli: Cli) -> color_eyre::Result<Option<App>> {
             action,
             value,
             playlist,
+            json,
             ..
         }) => {
-            cli::msg(action, value.as_deref(), *playlist).await?;
+            cli::msg(*action, value.as_deref(), *playlist, *json).await?;
             return Ok(None);
         }
-        Some(Command::List { endpoint }) => {
-            cli::list(endpoint).await?;
+        Some(Command::Completions { shell }) => {
+            cli::completions(shell)?;
             return Ok(None);
         }
         None => {}
@@ -356,8 +464,9 @@ pub async fn run_cli(mut cli: Cli) -> color_eyre::Result<Option<App>> {
     init_logger(&config)?;
 
     if let Some(endpoint) = cli.daemon {
+        let (endpoint, playlist) = parse_daemon_endpoint(&endpoint, cli.playlist)?;
         App::new(config, false)?
-            .run_headless(&endpoint, cli.playlist)
+            .run_headless(&endpoint, playlist)
             .await?;
         return Ok(None);
     }
@@ -440,5 +549,94 @@ mod tests {
     fn parse_volume_out_of_range() {
         assert!(parse_volume("150").is_err());
         assert!(parse_volume("abc").is_err());
+    }
+
+    #[test]
+    fn parse_msg_play_with_optional_id() {
+        let plain = parse_msg_action(MsgActionArg::Play, None, None).unwrap();
+        assert_eq!(plain, MsgAction::Play { song_id: None });
+
+        let with_id = parse_msg_action(MsgActionArg::Play, Some("187186"), None).unwrap();
+        assert_eq!(
+            with_id,
+            MsgAction::Play {
+                song_id: Some(187186)
+            }
+        );
+
+        assert!(parse_msg_action(MsgActionArg::Play, Some("abc"), None).is_err());
+        assert_eq!(
+            parse_msg_action(MsgActionArg::TogglePlay, None, None).unwrap(),
+            MsgAction::TogglePlay
+        );
+    }
+
+    #[test]
+    fn msg_switch_list_and_aliases() {
+        assert_eq!(
+            parse_msg_action(MsgActionArg::SwitchList, Some("toplist"), None).unwrap(),
+            MsgAction::SwitchList {
+                endpoint: "toplist".into(),
+                playlist: None,
+            }
+        );
+        assert_eq!(
+            parse_msg_action(MsgActionArg::ToggleLike, None, None).unwrap(),
+            MsgAction::ToggleLike
+        );
+        assert_eq!(
+            parse_msg_action(MsgActionArg::Previous, None, None).unwrap(),
+            MsgAction::Previous
+        );
+    }
+
+    #[test]
+    fn print_queue_marks_current_song() {
+        let queue = ipc::QueueSnapshot {
+            current_index: Some(0),
+            songs: vec![
+                ipc::QueueEntry {
+                    id: 1,
+                    name: "Song A".into(),
+                    singer: "Artist A".into(),
+                    album: String::new(),
+                    duration_ms: 125_000,
+                },
+                ipc::QueueEntry {
+                    id: 2,
+                    name: "Song B".into(),
+                    singer: "Artist B".into(),
+                    album: String::new(),
+                    duration_ms: 65_000,
+                },
+            ],
+        };
+        let out = render_queue(&queue);
+        let expected = format!(
+            "▶01  {:<24}  {:<20}  {}\n {:02}  {:<24}  {:<20}  {}\n",
+            "Song A",
+            "Artist A",
+            format_duration(125_000),
+            2,
+            "Song B",
+            "Artist B",
+            format_duration(65_000),
+        );
+        assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn completions_prints_script() {
+        // Capturing stdout is awkward; instead verify the subcommand parses and
+        // that each supported shell name is accepted by the parser.
+        let cmd = Cli::try_parse_from(["pigma", "completions", "bash"]).unwrap();
+        assert!(matches!(
+            cmd.command,
+            Some(Command::Completions { shell }) if shell == "bash"
+        ));
+        assert!(Cli::try_parse_from(["pigma", "completions", "zsh"]).is_ok());
+        assert!(Cli::try_parse_from(["pigma", "completions", "fish"]).is_ok());
+        assert!(Cli::try_parse_from(["pigma", "completions", "powershell"]).is_ok());
+        assert!(Cli::try_parse_from(["pigma", "completions", "nushell"]).is_err());
     }
 }
