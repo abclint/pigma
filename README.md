@@ -316,15 +316,14 @@ Send-Pigma '{"cmd":"msg","action":{"action":"volume","absolute":0.75}}'  # 音�
 
 **Waybar 集成**：
 
-  - 参考[waybar](./waybar)。状态模块用连续脚本 `pigma status --waybar --watch`：waybar 逐行读取输出、每次快照变更即时刷新（事件推送，无需每秒轮询）。按钮图标同理（`--icon like/play`），`prev`/`next` 是静态图标（`interval: once`）。
+  - 参考[waybar](./waybar)。状态模块用 bash 脚本 `waybar/pigma`，每秒调 `pigma status --json` 获取状态并格式化为 waybar JSON。脚本内置 `ensure_daemon`，首次调用时自动启动 daemon。
 
 ```jsonc
 // ~/.config/waybar/config.jsonc 核心片段
 "custom/pigma": {
-  "exec": "pigma status --waybar --watch",
+  "exec": "~/.config/waybar/scripts/pigma",
+  "interval": 1,
   "return-type": "json",
-  "exec-on-event": false,
-  "restart-interval": 5,          // 脚本意外退出后自动重拉
   "on-click-right": "pigma msg mode",
   "on-scroll-up": "pigma msg volume +5",
   "on-scroll-down": "pigma msg volume -5"

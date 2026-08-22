@@ -71,7 +71,7 @@ pub struct App {
     /// Live playback queue served to `pigma status -L` over the IPC socket.
     pub queue: Arc<Mutex<QueueSnapshot>>,
     /// Fan-out channel for snapshot changes, consumed by the IPC `subscribe`
-    /// handler so long-running clients (waybar watchers) get event push.
+    /// handler so long-running clients get event push.
     status_tx: tokio::sync::broadcast::Sender<StatusSnapshot>,
     /// When the last snapshot was broadcast; discrete changes fire immediately,
     /// position refresh (playing) is throttled to once per second.

@@ -217,10 +217,10 @@ Windows 命名管道协议相同，socket 路径可用 `--socket <pipe-name>` �
 pigma -d
 pigma msg play
 
-# 2. Waybar 状态模块（连续脚本，事件推送；参考 waybar/config.jsonc）
-pigma status --waybar               # 一次输出 waybar JSON（图标/class/跑马灯/tooltip）
-pigma status --waybar --icon like   # 按钮图标：like | play | prev | next
-pigma status --waybar --watch       # 长驻订阅：每次快照变更打印一行（waybar 用这个）
+# 2. Waybar 状态模块（bash 脚本，每秒轮询；参考 waybar/pigma）
+waybar/pigma                              # 主状态：song – artist | vol% · mode
+waybar/pigma --icon like                  # 按钮图标：like | play | prev | next
+pigma status --json                       # 原始 JSON 输出（脚本内部调用）
 pigma status --template "{artist} – {name} [{status}]"
 
 # 3. 音量快捷键
