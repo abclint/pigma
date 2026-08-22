@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.2.13] - 2026-08-22
 
 ### 🚀 Features
 

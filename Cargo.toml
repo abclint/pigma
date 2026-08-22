@@ -1,6 +1,6 @@
 [package]
 name = "pigma"
-version = "0.2.12"
+version = "0.2.13"
 edition = "2024"
 description = "A netease cloud music client"
 repository = "https://github.com/akirco/pigma.git"
@@ -36,6 +36,9 @@ unicode-width = "0.2.2"
 url = "2.5.8"
 # dhat = "0.3.3"
 
+[dev-dependencies]
+rustls = { version = "0.23.43", default-features = false, features = ["ring", "std"] }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2.189"
 
@@ -51,6 +54,3 @@ codegen-units = 1
 # [features]
 # default = ["vorbis"]
 # vorbis = ["rodio/vorbis"]
-
-[dev-dependencies]
-rustls = { version = "0.23.43", default-features = false, features = ["ring", "std"] }

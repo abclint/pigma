@@ -2432,7 +2432,7 @@ dependencies = [
 
 [[package]]
 name = "pigma"
-version = "0.2.12"
+version = "0.2.13"
 dependencies = [
  "clap",
  "clap_complete",
